@@ -3215,7 +3215,7 @@ function saveGlobalConfig() {
 										useHighPerformanceGpu: document.getElementById('gHighPerfGpu').checked
 										};
 										var _cfKeyEl = document.getElementById('gCurseForgeKey');
-					if (_cfKeyEl && _cfKeyEl.value.trim()) config.curseForgeApiKey = _cfKeyEl.value.trim();
+					if (_cfKeyEl && _cfKeyEl.value.trim()) cfg.curseForgeApiKey = _cfKeyEl.value.trim();
 					post({ action: 'save_global_config', config: cfg });
 										showSideToast('设置已保存', '正在应用...', 100);
 										setTimeout(hideSideToast, 1500);
