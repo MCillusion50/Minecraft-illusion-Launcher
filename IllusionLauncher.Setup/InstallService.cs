@@ -11,6 +11,16 @@ namespace IllusionLauncher.Setup
     /// <summary>安装/卸载的系统级操作（依赖检测、解压、快捷方式、注册表）</summary>
     internal static class InstallService
     {
+        /// <summary>是否已内嵌安装载荷（VS 调试时通常没有，走演示流程）</summary>
+        internal static bool HasPayload
+        {
+            get
+            {
+                using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip"))
+                    return s != null;
+            }
+        }
+
         internal const string AppExeName = "IllusionLauncherWPF.exe";
         internal const string UninstallerName = "unins.exe";
         internal const string UninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\IllusionLauncher";

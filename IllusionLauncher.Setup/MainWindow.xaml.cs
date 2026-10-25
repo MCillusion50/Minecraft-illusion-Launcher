@@ -13,6 +13,8 @@ namespace IllusionLauncher.Setup
     public partial class MainWindow : Window
     {
         private const string DefaultInstallPath = @"C:\Program Files\IllusionLauncher";
+        private bool _busy;
+
         private static string AppVersion
         {
             get
@@ -26,13 +28,37 @@ namespace IllusionLauncher.Setup
             }
         }
 
-        private bool _busy;
-
         public MainWindow()
         {
             InitializeComponent();
 
-            if (LblVersion != null) LblVersion.Text = "幻境启动器 · v" + AppVersion;
+            // 强制加载本地背景图
+            try
+            {
+                var imgPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bg.png");
+                if (System.IO.File.Exists(imgPath))
+                {
+                    var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.UriSource = new Uri(imgPath, UriKind.Absolute);
+                    bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+
+                    // 直接把图片填进 Border.Background：Border 会严格按自己的 CornerRadius 裁剪，
+                    // 尺寸自动跟随窗口，不再写死 592x432（那会盖住 1.5px 边框、圆角错位）。
+                    BgContainer.Background = new System.Windows.Media.ImageBrush(bitmap)
+                    {
+                        Stretch = System.Windows.Media.Stretch.UniformToFill,
+                        AlignmentX = System.Windows.Media.AlignmentX.Center,
+                        AlignmentY = System.Windows.Media.AlignmentY.Center
+                    };
+
+                    // 预先做一张高斯模糊副本，给胶囊按钮当「毛玻璃」底用
+                    _bgBlurred = CreateBlurredBackdrop(bitmap, 18);
+                }
+            }
+            catch { }
 
             var args = Environment.GetCommandLineArgs();
             if (args.Length > 1 && args[1] == "--uninstall")
@@ -43,6 +69,103 @@ namespace IllusionLauncher.Setup
 
             TxtPath.Text = DefaultInstallPath;
             UpdateSpaceLabel();
+
+            // 布局到位/尺寸变化时重新对齐按钮的模糊背景（按钮位置一变就得重算 Viewbox）
+            BgContainer.LayoutUpdated += (s, e) => UpdateGlassBackdrops();
+            Loaded += (s, e) => UpdateGlassBackdrops();
+        }
+
+        // ---------- 毛玻璃按钮 ----------
+
+        /// <summary>背景图的高斯模糊副本（尺寸与原图一致）。</summary>
+        private System.Windows.Media.Imaging.BitmapSource _bgBlurred;
+
+        /// <summary>
+        /// 生成原图的高斯模糊版本。先向四周扩 padding 再模糊，最后裁掉边缘，
+        /// 否则模糊会采样到图外的透明像素，导致按钮边缘发暗。
+        /// </summary>
+        private static System.Windows.Media.Imaging.BitmapSource CreateBlurredBackdrop(
+            System.Windows.Media.Imaging.BitmapSource src, double radius)
+        {
+            int pad = (int)Math.Ceiling(radius * 2);
+            int w = src.PixelWidth, h = src.PixelHeight;
+
+            var dv = new System.Windows.Media.DrawingVisual();
+            dv.Effect = new System.Windows.Media.Effects.BlurEffect
+            {
+                Radius = radius,
+                KernelType = System.Windows.Media.Effects.KernelType.Gaussian,
+                RenderingBias = System.Windows.Media.Effects.RenderingBias.Performance
+            };
+            using (var dc = dv.RenderOpen())
+            {
+                var brush = new System.Windows.Media.ImageBrush(src) { Stretch = System.Windows.Media.Stretch.Fill };
+                dc.DrawRectangle(brush, null, new Rect(pad, pad, w, h));
+            }
+
+            var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                w + pad * 2, h + pad * 2, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            rtb.Render(dv);
+
+            var cropped = new System.Windows.Media.Imaging.CroppedBitmap(rtb, new Int32Rect(pad, pad, w, h));
+            cropped.Freeze();
+            return cropped;
+        }
+
+        /// <summary>让每个胶囊按钮的 GlassImg 图层显示「它背后那块背景图的模糊版」。</summary>
+        private void UpdateGlassBackdrops()
+        {
+            if (_bgBlurred == null) return;
+
+            double cw = BgContainer.ActualWidth, ch = BgContainer.ActualHeight;
+            if (cw < 1 || ch < 1) return;
+
+            double iw = _bgBlurred.PixelWidth, ih = _bgBlurred.PixelHeight;
+            double scale = Math.Max(cw / iw, ch / ih);   // 与 UniformToFill 一致
+            double ox = (cw - iw * scale) / 2.0;
+            double oy = (ch - ih * scale) / 2.0;
+
+            // 胶囊按钮 + 路径输入框，统一走同一套毛玻璃处理
+            var controls = new System.Windows.Controls.Control[] { BtnBrowse, BtnInstall, BtnDone, BtnLaunch, TxtPath };
+            foreach (var btn in controls)
+            {
+                if (btn == null || !btn.IsVisible || btn.ActualWidth < 1) continue;
+
+                btn.ApplyTemplate();
+                var glass = btn.Template.FindName("GlassImg", btn) as System.Windows.Controls.Border;
+                if (glass == null) continue;
+
+                Point btnPos, bgPos;
+                try
+                {
+                    btnPos = btn.TransformToAncestor(this).Transform(new Point(0, 0));
+                    bgPos = BgContainer.TransformToAncestor(this).Transform(new Point(0, 0));
+                }
+                catch { continue; }
+
+                // 按钮左上角 → 卡片坐标 → 原图像素坐标
+                double rx = ((btnPos.X - bgPos.X) - ox) / scale;
+                double ry = ((btnPos.Y - bgPos.Y) - oy) / scale;
+                double rw = btn.ActualWidth / scale;
+                double rh = btn.ActualHeight / scale;
+
+                rx = Math.Max(0, Math.Min(rx, iw - 1));
+                ry = Math.Max(0, Math.Min(ry, ih - 1));
+                rw = Math.Min(rw, iw - rx);
+                rh = Math.Min(rh, ih - ry);
+                if (rw <= 0 || rh <= 0) continue;
+
+                var box = new Rect(rx, ry, rw, rh);
+                if (glass.Tag is Rect prev && prev == box) continue;   // 没变化就不重建 Brush
+                glass.Tag = box;
+
+                glass.Background = new System.Windows.Media.ImageBrush(_bgBlurred)
+                {
+                    ViewboxUnits = System.Windows.Media.BrushMappingMode.Absolute,
+                    Viewbox = box,
+                    Stretch = System.Windows.Media.Stretch.Fill
+                };
+            }
         }
 
         // ---------- 卸载模式 ----------
@@ -76,39 +199,32 @@ namespace IllusionLauncher.Setup
             Close();
         }
 
-        // ---------- 导航 ----------
-        private void ShowScreen(UIElement screen)
-        {
-            ScreenWelcome.Visibility = screen == ScreenWelcome ? Visibility.Visible : Visibility.Collapsed;
-            ScreenPath.Visibility = screen == ScreenPath ? Visibility.Visible : Visibility.Collapsed;
-            ScreenInstall.Visibility = screen == ScreenInstall ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        private void BtnStart_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenPath);
-
-        private void BtnBack_Click(object sender, RoutedEventArgs e) => ShowScreen(ScreenWelcome);
-
+        // ---------- 选择文件夹 ----------
         private void BtnBrowse_Click(object sender, RoutedEventArgs e)
         {
-            using (var dlg = new System.Windows.Forms.FolderBrowserDialog())
-            {
-                dlg.Description = "选择 Illusion Launcher 的安装位置";
-                dlg.ShowNewFolderButton = true;
-                if (Directory.Exists(TxtPath.Text)) dlg.SelectedPath = TxtPath.Text;
+            if (_busy) return;
+            var current = TxtPath.Text ?? "";
+            var start = Directory.Exists(current) ? current : Path.GetPathRoot(current);
 
-                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                {
-                    TxtPath.Text = Path.Combine(dlg.SelectedPath, "IllusionLauncher");
-                    UpdateSpaceLabel();
-                }
+            var picked = FolderPicker.Pick("选择 Illusion Launcher 的安装文件夹", start);
+            if (!string.IsNullOrEmpty(picked))
+            {
+                TxtPath.Text = picked;
+                UpdateSpaceLabel();
             }
+        }
+
+        private void TxtPath_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        {
+            if (LblSpace != null) UpdateSpaceLabel();
         }
 
         private void UpdateSpaceLabel()
         {
             try
             {
-                var root = Path.GetPathRoot(TxtPath.Text);
+                var text = TxtPath.Text ?? "";
+                var root = Path.GetPathRoot(text);
                 if (string.IsNullOrEmpty(root)) { LblSpace.Text = ""; return; }
 
                 var drive = new DriveInfo(root);
@@ -124,8 +240,10 @@ namespace IllusionLauncher.Setup
         // ---------- 安装 ----------
         private async void BtnInstall_Click(object sender, RoutedEventArgs e)
         {
-            var target = (TxtPath.Text ?? "").Trim();
-            if (target.Length < 4 || Path.GetPathRoot(target) == target)
+            if (_busy) return;
+
+            var target = (TxtPath.Text ?? "").Trim().TrimEnd('\\');
+            if (target.Length < 4 || Path.GetPathRoot(target).TrimEnd('\\') == target)
             {
                 MessageBox.Show("请选择一个具体的安装文件夹，不能直接装在磁盘根目录。", "路径无效",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -141,9 +259,10 @@ namespace IllusionLauncher.Setup
             }
 
             _busy = true;
-            ShowScreen(ScreenInstall);
-            LblInstallTitle.Text = "正在安装…";
+            BtnInstall.Visibility = Visibility.Collapsed;
+            PanelProgress.Visibility = Visibility.Visible;
             PanelDone.Visibility = Visibility.Collapsed;
+            TxtPath.IsReadOnly = true;
             SetProgress(0);
             BtnClose.IsEnabled = false;
 
@@ -154,23 +273,40 @@ namespace IllusionLauncher.Setup
             }
             catch (Exception ex)
             {
-                LblInstallTitle.Text = "安装失败";
-                SetStatus(ex.Message);
+                SetStatus("安装失败：" + ex.Message);
                 PanelDone.Visibility = Visibility.Visible;
                 _busy = false;
                 BtnClose.IsEnabled = true;
+                TxtPath.IsReadOnly = false;
             }
         }
 
         private void DoInstall(string target)
         {
+            // 正式安装包：用内嵌的 payload.zip；
+            // VS 调试运行：没有内嵌载荷，自动回退到 build\publish，让 F5 也能真实安装
+            var devPayload = InstallService.HasPayload ? null : FindDevPayloadDir();
+
+            if (!InstallService.HasPayload && devPayload == null)
+            {
+                for (var p = 0; p <= 100; p += 5)
+                {
+                    SetProgress(p * 0.85);
+                    SetStatus(p < 70 ? $"正在解压程序文件… {p}%" : "正在创建快捷方式…");
+                    System.Threading.Thread.Sleep(70);
+                }
+                SetProgress(100);
+                SetStatus("演示模式：未找到 build\\publish，请先构建主程序或运行 make-release.ps1");
+                return;
+            }
+
             SetStatus("正在检查运行环境…");
 
             if (!InstallService.IsDotNet10DesktopInstalled())
             {
                 SetStatus("未检测到 .NET 10 桌面运行时，正在安装…");
                 InstallService.InstallPrereq(InstallService.NetRuntimeUrl,
-                    "windowsdesktop-runtime-win10-x64.exe", "/install /quiet /norestart", SetStatus);
+                    "windowsdesktop-runtime-win-x64.exe", "/install /quiet /norestart", SetStatus);
             }
 
             if (!InstallService.IsWebView2Installed())
@@ -185,11 +321,13 @@ namespace IllusionLauncher.Setup
             SetStatus("正在解压程序文件…");
             var progress = new Progress<double>(p =>
             {
-                // 解压占进度条的 0~85%
                 SetProgress(p * 0.85);
                 SetStatus($"正在解压程序文件… {p:F0}%");
             });
-            InstallService.ExtractPayload(target, progress);
+            if (InstallService.HasPayload)
+                InstallService.ExtractPayload(target, progress);
+            else
+                CopyDirectoryWithProgress(devPayload, target, progress);
 
             SetStatus("正在创建快捷方式…");
             SetProgress(90);
@@ -200,7 +338,6 @@ namespace IllusionLauncher.Setup
             SetStatus("正在写入卸载信息…");
             SetProgress(95);
 
-            // 把安装器自身复制进去当卸载程序
             var uninstaller = Path.Combine(target, InstallService.UninstallerName);
             try { File.Copy(Assembly.GetExecutingAssembly().Location, uninstaller, true); } catch { }
             InstallService.WriteUninstallKey(target, AppVersion, uninstaller);
@@ -231,10 +368,36 @@ namespace IllusionLauncher.Setup
         {
             _busy = false;
             BtnClose.IsEnabled = true;
-            LblInstallTitle.Text = "安装完成";
             SetStatus($"已安装到 {TxtPath.Text}");
             SetProgress(100);
             PanelDone.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>调试运行时：顺着 exe 目录往上找 build\publish（仓库根的构建产物）。</summary>
+        private static string FindDevPayloadDir()
+        {
+            var dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+            for (var i = 0; i < 10 && dir != null; i++, dir = dir.Parent)
+            {
+                var candidate = Path.Combine(dir.FullName, "build", "publish");
+                if (File.Exists(Path.Combine(candidate, InstallService.AppExeName))) return candidate;
+            }
+            return null;
+        }
+
+        /// <summary>把目录树复制到目标位置，按文件数报告进度（0-100）。</summary>
+        private static void CopyDirectoryWithProgress(string source, string dest, IProgress<double> progress)
+        {
+            var files = Directory.GetFiles(source, "*", SearchOption.AllDirectories);
+            for (var i = 0; i < files.Length; i++)
+            {
+                var relative = files[i].Substring(source.Length)
+                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var outPath = Path.Combine(dest, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(outPath));
+                File.Copy(files[i], outPath, true);
+                progress?.Report((i + 1) * 100.0 / files.Length);
+            }
         }
 
         private void BtnLaunch_Click(object sender, RoutedEventArgs e)

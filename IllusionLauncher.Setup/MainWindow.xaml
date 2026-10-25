@@ -2,134 +2,169 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Illusion Launcher 安装程序"
-        Width="480" Height="560"
-        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Width="640" Height="480"
+        WindowStyle="None" AllowsTransparency="True"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
         FontFamily="Microsoft YaHei UI, Segoe UI"
-        UseLayoutRounding="True" SnapsToDevicePixels="True">
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        Background="Transparent">
 
-    <Border Margin="18" Background="White" CornerRadius="20">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.16" Color="#000000"/>
-        </Border.Effect>
+    <Window.Triggers>
+        <!-- 海浪循环动画：三层不同速度/方向，无缝衔接（一个周期 = 1200px） -->
+        <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+            <BeginStoryboard>
+                <Storyboard RepeatBehavior="Forever">
+                    <!-- 第 1 层：26s 走完一个周期（600px），缓慢 -->
+                    <DoubleAnimation Storyboard.TargetName="WaveBackX" Storyboard.TargetProperty="X"
+                                     From="0" To="-600" Duration="0:0:26"/>
+                    <!-- 第 2 层：18s，并上下浮沉（海浪的呼吸感） -->
+                    <DoubleAnimation Storyboard.TargetName="WaveMidX" Storyboard.TargetProperty="X"
+                                     From="0" To="-600" Duration="0:0:18"/>
+                    <DoubleAnimation Storyboard.TargetName="WaveMidY" Storyboard.TargetProperty="Y"
+                                     From="0" To="10" Duration="0:0:4.5"
+                                     AutoReverse="True">
+                        <DoubleAnimation.EasingFunction>
+                            <SineEase EasingMode="EaseInOut"/>
+                        </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                    <!-- 第 3 层：12s 反向，细浪更快 -->
+                    <DoubleAnimation Storyboard.TargetName="WaveFrontX" Storyboard.TargetProperty="X"
+                                     From="-600" To="0" Duration="0:0:12"/>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
 
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="58"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+    <Grid Background="Transparent">
+        
+        <!-- 玻璃边框：实心白描边 -->
+        <Border Margin="24" CornerRadius="24"
+                Background="Transparent" 
+                BorderBrush="#FFFFFF" BorderThickness="3"
+                MouseLeftButtonDown="Header_MouseLeftButtonDown">
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="30" ShadowDepth="6" Opacity="0.6"/>
+            </Border.Effect>
 
-            <!-- 顶部标题栏 -->
-            <Grid Grid.Row="0" Background="Transparent" MouseLeftButtonDown="Header_MouseLeftButtonDown">
-                <TextBlock Text="Illusion Launcher 安装程序"
-                           Margin="26,0,0,0" VerticalAlignment="Center"
-                           FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="12.5"
-                           Foreground="{StaticResource TextSecondary}"/>
-                <Button x:Name="BtnClose" Style="{StaticResource CloseButton}" Content="✕"
-                        HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,18,0"
-                        Click="BtnClose_Click"/>
-            </Grid>
+            <Grid>
+                <!-- ===== 背景图容器 =====
+                     圆角由 Border 自身背景裁剪（WPF 中 Border.Background 会严格按 CornerRadius 裁剪），
+                     不再写死尺寸：外框圆角 24 - 边框 1.5 = 内圆角 22.5，任意窗口尺寸下都同心。 -->
+                <Border x:Name="BgContainer" CornerRadius="21"
+                        Background="#12121A" Opacity="0.92"/>
 
-            <!-- ================= 第 1 屏：欢迎 ================= -->
-            <StackPanel x:Name="ScreenWelcome" Grid.Row="1" VerticalAlignment="Center"
-                        HorizontalAlignment="Center" Margin="0,0,0,26">
-                <Border Width="92" Height="92" CornerRadius="24" HorizontalAlignment="Center">
-                    <Border.Background>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                            <GradientStop Color="#2E9BFF" Offset="0"/>
-                            <GradientStop Color="#0A6BE0" Offset="1"/>
+                <!-- 海浪层：放在 logo / 标题下方区域（不接收鼠标） -->
+                <Grid VerticalAlignment="Top" Margin="0,175,0,0" Height="300" IsHitTestVisible="False" ClipToBounds="True">
+                    <!-- 顶部渐变淡出，模拟前端 mask-image 的效果 -->
+                    <Grid.OpacityMask>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#00FFFFFF" Offset="0"/>
+                            <GradientStop Color="#FFFFFFFF" Offset="0.5"/>
+                            <GradientStop Color="#FFFFFFFF" Offset="1"/>
                         </LinearGradientBrush>
-                    </Border.Background>
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.28" Color="#0A84FF"/>
-                    </Border.Effect>
-                    <TextBlock Text="IL" Foreground="White" FontSize="34" FontWeight="Bold"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               FontFamily="Segoe UI"/>
-                </Border>
+                    </Grid.OpacityMask>
 
-                <TextBlock Text="Illusion Launcher" Style="{StaticResource TitleText}"
-                           HorizontalAlignment="Center" Margin="0,20,0,0"/>
-                <TextBlock x:Name="LblVersion" Text="幻境启动器" Style="{StaticResource SubText}"
-                           HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                    <Canvas>
+                        <!-- 第 1 层：大振幅、最淡、最慢 -->
+                        <Path Stroke="#B3FFFFFF" StrokeThickness="3"
+                              Data="M0,60 C150,-30 450,150 600,60 C750,-30 1050,150 1200,60">
+                            <Path.RenderTransform>
+                                <TranslateTransform x:Name="WaveBackX"/>
+                            </Path.RenderTransform>
+                        </Path>
 
-                <Button Content="开始安装" Style="{StaticResource PillPrimary}"
-                        Width="268" Margin="0,34,0,0" Click="BtnStart_Click"/>
+                        <!-- 第 2 层：中等振幅 + 上下浮沉 -->
+                        <Path Stroke="#CCFFFFFF" StrokeThickness="3"
+                              Data="M0,85 C150,30 450,140 600,85 C750,30 1050,140 1200,85">
+                            <Path.RenderTransform>
+                                <TransformGroup>
+                                    <TranslateTransform x:Name="WaveMidX"/>
+                                    <TranslateTransform x:Name="WaveMidY"/>
+                                </TransformGroup>
+                            </Path.RenderTransform>
+                        </Path>
 
-                <TextBlock x:Name="LblDefaultPath" Style="{StaticResource SubText}"
-                           HorizontalAlignment="Center" Margin="0,14,0,0" FontSize="11.5"
-                           Text="默认安装到 C:\Program Files\IllusionLauncher"/>
-            </StackPanel>
-
-            <!-- ================= 第 2 屏：选择位置 ================= -->
-            <Grid x:Name="ScreenPath" Grid.Row="1" Visibility="Collapsed" Margin="40,6,40,26">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Text="选择安装位置" Style="{StaticResource SectionTitle}"/>
-                <TextBlock Grid.Row="1" Text="建议安装在剩余空间 500 MB 以上的磁盘" Style="{StaticResource SubText}"
-                           Margin="0,8,0,0"/>
-
-                <Grid Grid.Row="2" Margin="0,22,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="TxtPath" Grid.Column="0" Style="{StaticResource PillTextBox}"/>
-                    <Button Grid.Column="1" Content="浏览…" Style="{StaticResource PillSecondary}"
-                            Width="88" Margin="10,0,0,0" Click="BtnBrowse_Click"/>
+                        <!-- 第 3 层：小振幅细纹，反向流动（就是前端 ocean-ripple） -->
+                        <Path Stroke="#E6FFFFFF" StrokeThickness="2"
+                              Data="M0,110 C100,95 200,125 300,110 C400,95 500,125 600,110 C700,95 800,125 900,110 C1000,95 1100,125 1200,110">
+                            <Path.RenderTransform>
+                                <TranslateTransform x:Name="WaveFrontX"/>
+                            </Path.RenderTransform>
+                        </Path>
+                    </Canvas>
                 </Grid>
 
-                <TextBlock x:Name="LblSpace" Grid.Row="3" Style="{StaticResource SubText}"
-                           Margin="4,14,0,0" Text=""/>
+                <!-- ===== 内容层 ===== -->
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                <Grid Grid.Row="4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Button Grid.Column="0" Content="返回" Style="{StaticResource PillSecondary}"
-                            Width="110" Click="BtnBack_Click"/>
-                    <Button Grid.Column="1" Content="安装" Style="{StaticResource PillPrimary}"
-                            Margin="12,0,0,0" Click="BtnInstall_Click"/>
-                </Grid>
-            </Grid>
-
-            <!-- ================= 第 3 屏：安装中 / 完成 ================= -->
-            <Grid x:Name="ScreenInstall" Grid.Row="1" Visibility="Collapsed" Margin="40,6,40,26">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <TextBlock x:Name="LblInstallTitle" Grid.Row="0" Text="正在安装…"
-                           Style="{StaticResource SectionTitle}"/>
-
-                <Border x:Name="TrackBar" Grid.Row="1" Height="8" CornerRadius="4" Background="{StaticResource Fill}"
-                        Margin="0,26,0,0">
-                    <Border x:Name="ProgressFill" Width="0" HorizontalAlignment="Left"
-                            CornerRadius="4" Background="{StaticResource Accent}"/>
-                </Border>
-
-                <TextBlock x:Name="LblStatus" Grid.Row="2" Style="{StaticResource SubText}"
-                           Margin="2,14,0,0" Text="准备中…"/>
-
-                <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right"
-                            x:Name="PanelDone" Visibility="Collapsed">
-                    <Button Content="完成" Style="{StaticResource PillSecondary}" Width="110"
+                    <!-- 右上角关闭按钮 -->
+                    <Button x:Name="BtnClose" Style="{StaticResource CloseButton}" Content="✕"
+                            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,20,20,0"
                             Click="BtnClose_Click"/>
-                    <Button Content="立即启动" Style="{StaticResource PillPrimary}" Width="150"
-                            Margin="12,0,0,0" Click="BtnLaunch_Click"/>
-                </StackPanel>
+
+                    <!-- 上半部分 -->
+                    <StackPanel Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,-20,0,0">
+                        <Grid Width="140" Height="140">
+                            <!-- 描边完全内嵌：Margin = StrokeThickness / 2，外径精确 140、内径 100，边缘不越界 -->
+                            <Ellipse Stroke="#FFFFFF" StrokeThickness="20" Margin="10">
+                                <Ellipse.Effect>
+                                    <!-- 原来的黑色投影会在圆环外圈糊出一层黑雾，换成极淡白光只保留呼吸感 -->
+                                    <DropShadowEffect Color="#FFFFFF" BlurRadius="18" ShadowDepth="0" Opacity="0.3"/>
+                                </Ellipse.Effect>
+                            </Ellipse>
+                        </Grid>
+                        <TextBlock Text="Minecraft illusion Launcher" Style="{StaticResource TitleText}" HorizontalAlignment="Center" Margin="0,24,0,0">
+                            <TextBlock.Effect>
+                                <DropShadowEffect Color="#000000" BlurRadius="12" ShadowDepth="3" Opacity="0.9"/>
+                            </TextBlock.Effect>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <!-- 下半部分 -->
+                    <StackPanel Grid.Row="1" Margin="40,0,40,32">
+                        
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="TxtPath" Style="{StaticResource PillTextBox}" TextChanged="TxtPath_TextChanged"/>
+                            <Button x:Name="BtnBrowse" Grid.Column="1" Content="更改" Style="{StaticResource PillSecondary}" 
+                                    Width="90" Margin="12,0,0,0" Click="BtnBrowse_Click"/>
+                        </Grid>
+
+                        <TextBlock x:Name="LblSpace" Style="{StaticResource SubText}" Margin="10,0,0,16" HorizontalAlignment="Left">
+                            <TextBlock.Effect>
+                                <DropShadowEffect Color="#000000" BlurRadius="12" ShadowDepth="3" Opacity="0.9"/>
+                            </TextBlock.Effect>
+                        </TextBlock>
+
+                        <StackPanel x:Name="PanelProgress" Visibility="Collapsed" Margin="0,0,0,16">
+                            <Border x:Name="TrackBar" Height="8" CornerRadius="4" Background="#66FFFFFF">
+                                <Border x:Name="ProgressFill" Width="0" HorizontalAlignment="Left" CornerRadius="4" Background="#FFFFFF"/>
+                            </Border>
+                            <TextBlock x:Name="LblStatus" Text="准备中…" Style="{StaticResource SubText}" Margin="4,10,0,0" HorizontalAlignment="Left" TextWrapping="Wrap">
+                                <TextBlock.Effect>
+                                    <DropShadowEffect Color="#000000" BlurRadius="12" ShadowDepth="3" Opacity="0.9"/>
+                                </TextBlock.Effect>
+                            </TextBlock>
+                        </StackPanel>
+
+                        <Grid>
+                            <Button x:Name="BtnInstall" Content="开始安装" Style="{StaticResource PillPrimary}" Click="BtnInstall_Click"/>
+
+                            <StackPanel x:Name="PanelDone" Visibility="Collapsed" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="BtnDone" Content="完成" Style="{StaticResource PillSecondary}" Width="110" Click="BtnClose_Click"/>
+                                <Button x:Name="BtnLaunch" Content="立即启动" Style="{StaticResource PillPrimary}" Width="150" Margin="16,0,0,0" Click="BtnLaunch_Click"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
             </Grid>
-        </Grid>
-    </Border>
+        </Border>
+    </Grid>
 </Window>

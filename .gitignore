@@ -11,6 +11,8 @@ payload.zip
 *.user
 *.suo
 *.DotSettings.user
+*.slnx.bak
+IllusionLauncher.Setup/IllusionLauncher.Setup.slnx
 
 # ===== 日志 / 崩溃 / 更新临时文件 =====
 *.log

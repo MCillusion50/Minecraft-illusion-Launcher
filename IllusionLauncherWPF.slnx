@@ -9,4 +9,7 @@
   <Project Path="IllusionLauncherWPF/IllusionLauncherWPF.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
+  <Project Path="IllusionLauncher.Setup/IllusionLauncher.Setup.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
 </Solution>
