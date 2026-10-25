@@ -711,6 +711,11 @@
 									<input type="checkbox" id="gHighPerfGpu" checked="">
 										<span>使用高性能显卡</span>
 									</label>
+								<div>
+									<div class="section-label" style="margin-top:0;">CurseForge API Key</div>
+									<input type="text" id="gCurseForgeKey" class="input-text" placeholder="留空则不修改；已配置时无需重填">
+									<div style="font-size:12px; opacity:.55; margin-top:6px;">在 console.curseforge.com 免费申请，填一次后不会再被清空</div>
+								</div>
 								<div style="display:flex; gap:10px; margin-top:4px;">
 									<button class="small-btn" onclick="saveGlobalConfig()" style="flex:1; background:rgba(59,130,246,0.92); border-color:rgba(59,130,246,0.92);">保存全局设置</button>
 <button class="small-btn" onclick="exportDiagnostics()" style="flex:1;" title="把日志和环境信息打包成 zip，令牌、密钥、用户名会自动隐藏">导出诊断包</button>
@@ -3209,7 +3214,9 @@ function saveGlobalConfig() {
 										disableVulkan: document.getElementById('gDisableVulkan').checked,
 										useHighPerformanceGpu: document.getElementById('gHighPerfGpu').checked
 										};
-										post({ action: 'save_global_config', config: cfg });
+										var _cfKeyEl = document.getElementById('gCurseForgeKey');
+					if (_cfKeyEl && _cfKeyEl.value.trim()) config.curseForgeApiKey = _cfKeyEl.value.trim();
+					post({ action: 'save_global_config', config: cfg });
 										showSideToast('设置已保存', '正在应用...', 100);
 										setTimeout(hideSideToast, 1500);
 										}

@@ -1738,7 +1738,11 @@ namespace IllusionLauncherWPF
                         newCfg.JavaPath = _global.JavaPath;
                         newCfg.GamePath = _global.GamePath;
                         newCfg.BackgroundPath = _global.BackgroundPath;
-                        newCfg.CurseForgeApiKey = _global.CurseForgeApiKey; // ⭐ 加上这行，保住你的 Key 不被清空
+                        // Key：前端传了非空值就更新，传空则保留旧值。
+                        //（无条件用旧值 → UI 里填了新 Key 也不生效；直接接受空值 → 保存其他设置时把 Key 清空）
+                        if (!string.IsNullOrWhiteSpace(newCfg.CurseForgeApiKey))
+                            _global.CurseForgeApiKey = newCfg.CurseForgeApiKey;
+                        newCfg.CurseForgeApiKey = _global.CurseForgeApiKey;
                         _global = newCfg;
                         SaveGlobalConfig();
 
