@@ -37,6 +37,14 @@ namespace IllusionLauncherWPF
             }
             catch { }
 
+            // 清理上次崩溃/强退残留的联机后端（仅在只有一个启动器实例时执行）
+            try
+            {
+                if (System.Diagnostics.Process.GetProcessesByName("IllusionLauncherWPF").Length <= 1)
+                    IllusionLauncherWPF.MainWindow.KillEasyTierBackend();
+            }
+            catch { }
+
             // 刚更新完那一次，旧进程可能还没完全退出，5 秒后再补删一次
             System.Threading.Tasks.Task.Run(async () =>
             {

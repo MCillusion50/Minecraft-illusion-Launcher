@@ -17,6 +17,9 @@ namespace IllusionLauncherWPF
         {
             MainWindow.UpdateLog($"=== updater start === src={srcDir} dst={dstDir} pid={pid} exe={exeName}");
 
+            // 先杀掉可能残留的联机后端，否则它会锁着 EasyTier 目录下的文件导致覆盖失败
+            MainWindow.KillEasyTierBackend();
+
             // 1. 等旧进程退出（最多 60 秒）
             try
             {

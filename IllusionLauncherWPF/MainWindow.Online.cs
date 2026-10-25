@@ -18,6 +18,29 @@ namespace IllusionLauncherWPF
         private ScaffoldingCenter? _currentCenter;
         private ScaffoldingGuest? _currentGuest;
 
+        /// <summary>杀掉联机后端进程（easytier-core）。它不会随主进程退出，必须显式清理，
+        /// 否则会变成僵尸进程一直占后台，而且锁定 EasyTier 目录下的文件导致更新失败。</summary>
+        internal static void KillEasyTierBackend()
+        {
+            try
+            {
+                foreach (var p in System.Diagnostics.Process.GetProcessesByName("easytier-core"))
+                {
+                    try
+                    {
+                        p.Kill(true);
+                        p.WaitForExit(3000);
+                        UpdateLog("[easytier] killed pid=" + p.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        UpdateLog("[easytier] kill failed pid=" + p.Id + " : " + ex.Message);
+                    }
+                }
+            }
+            catch { }
+        }
+
         // 简易 ILogger：把库日志转发到 Debug 输出
         private class DebugLoggerProvider : ILoggerProvider
         {

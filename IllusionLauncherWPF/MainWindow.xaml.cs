@@ -609,6 +609,8 @@ namespace IllusionLauncherWPF
             this.Loaded += async (s, e) => await OnWindowLoadedAsync();
             // ⭐ 核心：只要窗口一关，直接强制杀掉整个程序
             this.Closed += (s, e) => {
+                // 子进程 easytier-core 不会随主进程退出，必须显式清理，否则会留在后台占资源
+                KillEasyTierBackend();
                 Environment.Exit(0);
             };
             // 渲染事件（淡入淡出用）
