@@ -44,7 +44,7 @@ namespace IllusionLauncherWPF
                 var body = new
                 {
                     variant = variant,
-                    file = "data:image/png;base64," + pngBase64
+                    url = "data:image/png;base64," + pngBase64
                 };
                 var json = JsonSerializer.Serialize(body);
 
