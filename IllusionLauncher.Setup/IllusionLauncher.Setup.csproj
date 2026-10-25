@@ -24,9 +24,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="bg.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <EmbeddedResource Include="bg.png">
+      <LogicalName>bg.png</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.IO.Compression" />

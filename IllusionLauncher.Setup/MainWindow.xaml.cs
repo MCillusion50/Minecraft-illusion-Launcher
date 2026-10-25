@@ -35,16 +35,9 @@ namespace IllusionLauncher.Setup
             // 强制加载本地背景图
             try
             {
-                var imgPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bg.png");
-                if (System.IO.File.Exists(imgPath))
+                var bitmap = LoadBackgroundBitmap();
+                if (bitmap != null)
                 {
-                    var bitmap = new System.Windows.Media.Imaging.BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.UriSource = new Uri(imgPath, UriKind.Absolute);
-                    bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                    bitmap.EndInit();
-                    bitmap.Freeze();
-
                     // 直接把图片填进 Border.Background：Border 会严格按自己的 CornerRadius 裁剪，
                     // 尺寸自动跟随窗口，不再写死 592x432（那会盖住 1.5px 边框、圆角错位）。
                     BgContainer.Background = new System.Windows.Media.ImageBrush(bitmap)
@@ -76,6 +69,40 @@ namespace IllusionLauncher.Setup
         }
 
         // ---------- 毛玻璃按钮 ----------
+
+        /// <summary>
+        /// 读背景图：优先读内嵌资源（发版时安装器就是单独一个 exe，没有外部依赖），
+        /// 读不到再回退到 exe 同目录的 bg.png（方便换图涋预览）。
+        /// </summary>
+        private static System.Windows.Media.Imaging.BitmapSource LoadBackgroundBitmap()
+        {
+            var asm = typeof(MainWindow).Assembly;
+
+            using (var stream = asm.GetManifestResourceStream("bg.png"))
+            {
+                if (stream != null)
+                {
+                    var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bmp.StreamSource = stream;
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    return bmp;
+                }
+            }
+
+            var imgPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bg.png");
+            if (!System.IO.File.Exists(imgPath)) return null;
+
+            var fileBmp = new System.Windows.Media.Imaging.BitmapImage();
+            fileBmp.BeginInit();
+            fileBmp.UriSource = new Uri(imgPath, UriKind.Absolute);
+            fileBmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            fileBmp.EndInit();
+            fileBmp.Freeze();
+            return fileBmp;
+        }
 
         /// <summary>背景图的高斯模糊副本（尺寸与原图一致）。</summary>
         private System.Windows.Media.Imaging.BitmapSource _bgBlurred;
