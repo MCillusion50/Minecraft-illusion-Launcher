@@ -3180,3 +3180,11 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
 	height: 18px;
 	flex: 0 0 auto;
 }
+
+/* 头像按像素风放大，禁止浏览器平滑插值（否则 64px 放大到 150px 会糊） */
+.skin-avatar img,
+#skinAvatar img{
+	image-rendering: pixelated;
+	image-rendering: -webkit-optimize-contrast;
+	image-rendering: crisp-edges;
+}

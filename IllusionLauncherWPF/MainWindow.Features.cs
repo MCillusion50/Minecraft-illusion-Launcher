@@ -1006,6 +1006,16 @@ namespace IllusionLauncherWPF
                 await ExitDownloadLock(sender);
             }
         }
+        /// <summary>把位图转成 Pbgra32 像素数组，便于手工拼接/放大。</summary>
+        private static byte[] ToPbgra32Pixels(System.Windows.Media.Imaging.BitmapSource bmp, int w, int h)
+        {
+            var conv = new System.Windows.Media.Imaging.FormatConvertedBitmap(
+                bmp, System.Windows.Media.PixelFormats.Pbgra32, null, 0);
+            var buf = new byte[w * h * 4];
+            conv.CopyPixels(buf, w * 4, 0);
+            return buf;
+        }
+
         /// <summary>
         /// 读 Mojang 官方皮肤纹理，本地裁 8x8 头部放大到 64x64（叠加帽子层）。
         /// </summary>
@@ -1051,16 +1061,55 @@ namespace IllusionLauncherWPF
                 if (skin.PixelHeight >= 16)
                     hat = new System.Windows.Media.Imaging.CroppedBitmap(skin, new System.Windows.Int32Rect(40, 8, 8, 8));
 
-                var dv = new System.Windows.Media.DrawingVisual();
-                System.Windows.Media.RenderOptions.SetBitmapScalingMode(dv, System.Windows.Media.BitmapScalingMode.NearestNeighbor);
-                using (var dc = dv.RenderOpen())
+                // 手动像素合成 + 8 倍最近邻放大：WPF 的插值设置在这里不可靠，会糊成一片
+                var headPix = ToPbgra32Pixels(head, 8, 8);
+                var hatPix = hat != null ? ToPbgra32Pixels(hat, 8, 8) : null;
+
+                // 头部内缩 2px、帽子层铺满整个画布 —— 帽子四周外露一圈，头像就有立体感了
+                const int outSize = 64;
+                const int inset = 2;
+                const int headSize = outSize - inset * 2;
+
+                var dst = new byte[outSize * outSize * 4];
+                for (var y = 0; y < outSize; y++)
                 {
-                    dc.DrawImage(head, new System.Windows.Rect(0, 0, 64, 64));
-                    if (hat != null) dc.DrawImage(hat, new System.Windows.Rect(0, 0, 64, 64));
+                    for (var x = 0; x < outSize; x++)
+                    {
+                        var di = (y * outSize + x) * 4;
+
+                        // ① 帽子层（overlay）：铺满 64x64，不透明像素优先
+                        if (hatPix != null)
+                        {
+                            var hx = x * 8 / outSize;
+                            var hy = y * 8 / outSize;
+                            var hi = (hy * 8 + hx) * 4;
+                            if (hatPix[hi + 3] > 0)
+                            {
+                                dst[di] = hatPix[hi];
+                                dst[di + 1] = hatPix[hi + 1];
+                                dst[di + 2] = hatPix[hi + 2];
+                                dst[di + 3] = hatPix[hi + 3];
+                                continue;
+                            }
+                        }
+
+                        // ② 头部层：内缩 inset，居中放置
+                        if (x >= inset && x < outSize - inset && y >= inset && y < outSize - inset)
+                        {
+                            var hx2 = (x - inset) * 8 / headSize;
+                            var hy2 = (y - inset) * 8 / headSize;
+                            var hi2 = (hy2 * 8 + hx2) * 4;
+                            dst[di] = headPix[hi2];
+                            dst[di + 1] = headPix[hi2 + 1];
+                            dst[di + 2] = headPix[hi2 + 2];
+                            dst[di + 3] = headPix[hi2 + 3];
+                        }
+                    }
                 }
 
-                var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(64, 64, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
-                rtb.Render(dv);
+                System.Windows.Media.Imaging.BitmapSource rtb =
+                    System.Windows.Media.Imaging.BitmapSource.Create(outSize, outSize, 96, 96,
+                        System.Windows.Media.PixelFormats.Pbgra32, null, dst, outSize * 4);
                 rtb.Freeze();
 
                 var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
