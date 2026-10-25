@@ -1,4 +1,4 @@
-﻿using IllusionLauncherWPF;
+using IllusionLauncherWPF;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
@@ -1130,6 +1130,9 @@ namespace IllusionLauncherWPF
             return Path.Combine(dir, safe + ".json");
         }
 
+        /// <summary>配置文件按 camelCase 写盘，读取时必须忽略大小写，否则整个配置读不出来（Key/内存等全部丢失）。</summary>
+        private static readonly JsonSerializerOptions CfgJsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
         private void LoadGlobalConfig()
         {
             try
@@ -1137,7 +1140,7 @@ namespace IllusionLauncherWPF
                 var path = GetGlobalConfigPath();
                 if (File.Exists(path))
                 {
-                    _global = JsonSerializer.Deserialize<GlobalConfig>(File.ReadAllText(path)) ?? new GlobalConfig();
+                    _global = JsonSerializer.Deserialize<GlobalConfig>(File.ReadAllText(path), CfgJsonOptions) ?? new GlobalConfig();
                     // ⭐ 敏感字段解密（旧明文会自动原样通过，下次保存时变成密文）
                     _global.CurseForgeApiKey = SecretProtector.Unprotect(_global.CurseForgeApiKey);
                 }
@@ -1734,7 +1737,7 @@ namespace IllusionLauncherWPF
                     else if (action == "save_global_config")
                     {
                         var cfgJson = root.GetProperty("config").GetRawText();
-                        var newCfg = JsonSerializer.Deserialize<GlobalConfig>(cfgJson);
+                        var newCfg = JsonSerializer.Deserialize<GlobalConfig>(cfgJson, CfgJsonOptions);
                         newCfg.JavaPath = _global.JavaPath;
                         newCfg.GamePath = _global.GamePath;
                         newCfg.BackgroundPath = _global.BackgroundPath;
