@@ -16,6 +16,38 @@ namespace IllusionLauncherWPF
         /// <summary>最近一次上传失败的可读原因（直接展示到 UI）。</summary>
         private static string SkinUploadLastError = "";
 
+        /// <summary>
+        /// 判断皮肤是不是 slim（细手臂）模型。
+        /// 依据：64x64 皮肤里，classic 的手臂纹理会覆盖 (54,20)，而 slim 只画到 3px 宽，(54,20) 是透明。
+        /// 这是社区通用判定方式（skinview3d 等都用这个坐标）。
+        /// </summary>
+        private static bool IsSlimSkin(byte[] pngBytes)
+        {
+            try
+            {
+                using var ms = new System.IO.MemoryStream(pngBytes);
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.StreamSource = ms;
+                bmp.EndInit();
+
+                // 64x32 老格式没有 slim/classic 之分
+                if (bmp.PixelWidth < 64 || bmp.PixelHeight < 64) return false;
+
+                var conv = new System.Windows.Media.Imaging.FormatConvertedBitmap(
+                    bmp, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+
+                var pixel = new byte[4];
+                conv.CopyPixels(new System.Windows.Int32Rect(54, 20, 1, 1), pixel, 4, 0);
+                return pixel[3] == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private async Task<bool> UploadSkinToMojangAsync(string username, string skinPngPath, string variant = "classic")
         {
             try
@@ -46,7 +78,9 @@ namespace IllusionLauncherWPF
                 //    注意：JSON + data URI 的写法会被 Azure Front Door 的 WAF 直接 403
                 //    （返回 "The request is blocked." 的 HTML 页），multipart 才能正常通过。
                 var form = new MultipartFormDataContent();
-                form.Add(new StringContent(string.IsNullOrEmpty(variant) ? "classic" : variant, Encoding.UTF8), "variant");
+                // 自动检测模型：slim 皮肤在 (54,20) 处是透明像素，classic 不透明
+                var detectedVariant = IsSlimSkin(pngBytes) ? "slim" : "classic";
+                form.Add(new StringContent(detectedVariant, Encoding.UTF8), "variant");
                 var filePart = new ByteArrayContent(pngBytes);
                 filePart.Headers.ContentType = new MediaTypeHeaderValue("image/png");
                 form.Add(filePart, "file", Path.GetFileName(skinPngPath));
