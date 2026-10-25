@@ -23,3 +23,8 @@ hs_err_pid*.log
 # ===== 系统文件 =====
 Thumbs.db
 desktop.ini
+
+# ===== 临时补丁脚本（AI 批量改写用，不入库��=====
+patch-*.js
+fix-mslogin*.js
+check-js.js

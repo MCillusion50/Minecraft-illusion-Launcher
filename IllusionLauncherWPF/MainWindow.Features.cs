@@ -1,4 +1,4 @@
-﻿using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Core;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -165,7 +165,16 @@ namespace IllusionLauncherWPF
                         {
                             try
                             {
-                                var url = $"https://mc-heads.net/avatar/{uuid}/80/right/hat";
+                                // 优先：读 Mojang 官方皮肤纹理，本地裁剪生成头像（第三方 CDN 已全部失效）
+                            var official = await BuildAvatarFromMojangSkinAsync(uuid);
+                            if (official != null)
+                            {
+                                var officialPayload = JsonSerializer.Serialize(new { ok = true, uuid, dataUri = official });
+                                await RunOnUI(() => { _ = sender.ExecuteScriptAsync("onAvatarFetched(" + officialPayload + ")"); });
+                                return;
+                            }
+
+                            var url = $"https://mc-heads.net/avatar/{uuid}/80/right/hat";
                                 var req = new HttpRequestMessage(HttpMethod.Get, url);
                                 req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
                                 req.Headers.TryAddWithoutValidation("Accept", "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5");
@@ -997,5 +1006,75 @@ namespace IllusionLauncherWPF
                 await ExitDownloadLock(sender);
             }
         }
+        /// <summary>
+        /// 读 Mojang 官方皮肤纹理，本地裁 8x8 头部放大到 64x64（叠加帽子层）。
+        /// </summary>
+        private static async Task<string> BuildAvatarFromMojangSkinAsync(string uuid)
+        {
+            try
+            {
+                var clean = (uuid ?? "").Replace("-", "");
+                if (clean.Length != 32) return null;
+
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+                var profileJson = await http.GetStringAsync("https://sessionserver.mojang.com/session/minecraft/profile/" + clean);
+
+                string skinUrl = null;
+                using (var doc = JsonDocument.Parse(profileJson))
+                {
+                    if (doc.RootElement.TryGetProperty("properties", out var props) && props.GetArrayLength() > 0)
+                    {
+                        var b64 = props[0].GetProperty("value").GetString();
+                        var texturesJson = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(b64));
+                        using var texDoc = JsonDocument.Parse(texturesJson);
+                        skinUrl = texDoc.RootElement.GetProperty("textures").GetProperty("SKIN").GetProperty("url").GetString();
+                    }
+                }
+                if (string.IsNullOrWhiteSpace(skinUrl)) return null;
+
+                var skinBytes = await http.GetByteArrayAsync(skinUrl);
+                System.Windows.Media.Imaging.BitmapImage skin;
+                using (var ms = new System.IO.MemoryStream(skinBytes))
+                {
+                    skin = new System.Windows.Media.Imaging.BitmapImage();
+                    skin.BeginInit();
+                    skin.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    skin.StreamSource = ms;
+                    skin.EndInit();
+                }
+                skin.Freeze();
+
+                if (skin.PixelWidth < 64 || skin.PixelHeight < 16) return null;
+
+                var head = new System.Windows.Media.Imaging.CroppedBitmap(skin, new System.Windows.Int32Rect(8, 8, 8, 8));
+                System.Windows.Media.Imaging.BitmapSource hat = null;
+                if (skin.PixelHeight >= 16)
+                    hat = new System.Windows.Media.Imaging.CroppedBitmap(skin, new System.Windows.Int32Rect(40, 8, 8, 8));
+
+                var dv = new System.Windows.Media.DrawingVisual();
+                System.Windows.Media.RenderOptions.SetBitmapScalingMode(dv, System.Windows.Media.BitmapScalingMode.NearestNeighbor);
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawImage(head, new System.Windows.Rect(0, 0, 64, 64));
+                    if (hat != null) dc.DrawImage(hat, new System.Windows.Rect(0, 0, 64, 64));
+                }
+
+                var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(64, 64, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                rtb.Freeze();
+
+                var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+                using var outMs = new System.IO.MemoryStream();
+                enc.Save(outMs);
+                return "data:image/png;base64," + Convert.ToBase64String(outMs.ToArray());
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("[Avatar] official skin failed: " + ex.Message);
+                return null;
+            }
+        }
+
     }
 }

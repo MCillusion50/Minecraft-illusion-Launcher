@@ -1,72 +1,65 @@
 # Build app.ico (multi-size, PNG-compressed entries)
-# Visual matches assets\logo.svg: dark rounded square + white ring
+# Visual: transparent background + white ring (+ soft shadow so it stays
+# visible on white backgrounds). Rendered with WPF so the shadow is a real
+# gaussian blur instead of stacked strokes.
 # Usage: powershell -ExecutionPolicy Bypass -File make-icon.ps1
 
-Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName PresentationCore, PresentationFramework, WindowsBase
 
-Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
-using System;
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
+function Render-Ring([int]$size) {
+    $visual = New-Object System.Windows.Media.DrawingVisual
+    $dc = $visual.RenderOpen()
 
-public static class IconGen
-{
-    static GraphicsPath RoundedRect(float w, float h, float r)
-    {
-        var p = new GraphicsPath();
-        p.AddArc(0, 0, r * 2, r * 2, 180, 90);
-        p.AddArc(w - r * 2, 0, r * 2, r * 2, 270, 90);
-        p.AddArc(w - r * 2, h - r * 2, r * 2, r * 2, 0, 90);
-        p.AddArc(0, h - r * 2, r * 2, r * 2, 90, 90);
-        p.CloseFigure();
-        return p;
+    $c = $size / 2.0
+    # keep the ring small enough that the shadow stays inside the bitmap
+    $radius = $size * 0.30
+    $stroke = $size * 0.115
+
+    $brush = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromArgb(255,255,255,255))
+    $brush.Freeze()
+    $pen = New-Object System.Windows.Media.Pen $brush, $stroke
+    $pen.Freeze()
+
+    $dc.DrawEllipse($null, $pen, (New-Object System.Windows.Point($c, $c)), $radius, $radius)
+    $dc.Close()
+
+    if ($size -ge 32) {
+        $eff = New-Object System.Windows.Media.Effects.DropShadowEffect
+        $eff.Color = [System.Windows.Media.Colors]::Black
+        $eff.BlurRadius = [math]::Max(3, $size * 0.10)
+        $eff.ShadowDepth = 0
+        $eff.Opacity = 0.50
+        $visual.Effect = $eff
     }
 
-    public static Bitmap Render(int size)
-    {
-        var bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-
-            using (var path = RoundedRect(size, size, size * 0.23f))
-            using (var brush = new LinearGradientBrush(
-                       new Rectangle(-1, -1, size + 2, size + 2),
-                       Color.FromArgb(255, 26, 26, 36),
-                       Color.FromArgb(255, 10, 10, 15),
-                       90f))
-            {
-                g.FillPath(brush, path);
-            }
-
-            float d = size * 0.50f;
-            float stroke = size * 0.115f;
-            var rect = new RectangleF((size - d) / 2f, (size - d) / 2f, d, d);
-            using (var pen = new Pen(Color.FromArgb(255, 255, 255, 255), stroke))
-            {
-                g.DrawEllipse(pen, rect);
-            }
-        }
-        return bmp;
-    }
+    $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap ($size, $size, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
+    $rtb.Render($visual)
+    return $rtb
 }
-"@
+
+function Encode-Png($bitmap, $path) {
+    $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
+    $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($bitmap))
+    $fs = [System.IO.File]::Create($path)
+    $enc.Save($fs)
+    $fs.Close()
+}
 
 $sizes = @(16, 20, 24, 32, 40, 48, 64, 128, 256)
 $root = $PSScriptRoot
 $pngData = @()
+$tmpDir = Join-Path $env:TEMP ("iconbuild_" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $tmpDir | Out-Null
 
 foreach ($s in $sizes) {
-    $bmp = [IconGen]::Render($s)
-    $ms = New-Object System.IO.MemoryStream
-    $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-    $pngData += ,$ms.ToArray()
-    $ms.Dispose()
-    $bmp.Dispose()
+    $bmp = Render-Ring $s
+    $tmpPng = Join-Path $tmpDir "$s.png"
+    Encode-Png $bmp $tmpPng
+    $pngData += ,([System.IO.File]::ReadAllBytes($tmpPng))
 }
+Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 
+# ---- assemble ICO (Vista+ supports PNG-compressed entries) ----
 $out = Join-Path $root "app.ico"
 $fs = [System.IO.File]::Create($out)
 $bw = New-Object System.IO.BinaryWriter($fs)

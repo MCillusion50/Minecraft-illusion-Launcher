@@ -1206,7 +1206,11 @@ namespace IllusionLauncherWPF
                 JavaPath = _global.JavaPath,
                 GamePath = _global.GamePath,
             };
-            if (vc.MaxMemoryMB.HasValue) eff.MaxMemoryMB = vc.MaxMemoryMB.Value;
+            // 自动内存模式：每次都按当前系统内存重新算，彻底避免「设置里改了但进游戏没变」
+            if (_global.AutoMemory)
+                eff.MaxMemoryMB = CalcAutoMemoryMB();
+            else if (vc.MaxMemoryMB.HasValue)
+                eff.MaxMemoryMB = vc.MaxMemoryMB.Value;
             if (vc.MinMemoryMB.HasValue) eff.MinMemoryMB = vc.MinMemoryMB.Value;
             if (!string.IsNullOrEmpty(vc.JvmArgs)) eff.JvmArgs = vc.JvmArgs;
             if (!string.IsNullOrEmpty(vc.GameArgs)) eff.GameArgs = vc.GameArgs;
@@ -1383,7 +1387,41 @@ namespace IllusionLauncherWPF
                                 }
 
                                 var resolved = SmartVersionResolver.ResolveRaw(mcDir, versionId);
-                                string mcVer = resolved.Id;
+
+                                // ===== 优先直接读版本 JSON 里的真实版本字段 =====
+                                // 整合包 / 自定义命名的版本（如 Zombie_Invade_100_Days）
+                                // 靠文件夹名永远猜不准，只能读 json。
+                                string jsonMcVer = null;
+                                try
+                                {
+                                    using var vdoc = JsonDocument.Parse(File.ReadAllText(jsonPath));
+                                    var vr = vdoc.RootElement;
+
+                                    // 1) clientVersion：HMCL / 部分整合包会写
+                                    if (vr.TryGetProperty("clientVersion", out var cvEl) && cvEl.ValueKind == JsonValueKind.String)
+                                    {
+                                        var cv = cvEl.GetString();
+                                        if (IsMcVersionLike(cv)) jsonMcVer = cv;
+                                    }
+
+                                    // 2) jar：Mojang 官方 json 和 Forge 合并版本通常带 "jar": "1.12.2"
+                                    if (jsonMcVer == null && vr.TryGetProperty("jar", out var jarEl) && jarEl.ValueKind == JsonValueKind.String)
+                                    {
+                                        var jar = jarEl.GetString();
+                                        if (jar != versionId && IsMcVersionLike(jar)) jsonMcVer = jar;
+                                    }
+
+                                    // 3) id 本身就是标准 MC 版本号（原版版本）
+                                    if (jsonMcVer == null && vr.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String)
+                                    {
+                                        var idv = idEl.GetString();
+                                        if (IsMcVersionLike(idv)) jsonMcVer = idv;
+                                    }
+                                }
+                                catch { /* json 读不了就走下面的兜底 */ }
+
+                                string mcVer = jsonMcVer;
+                                if (string.IsNullOrWhiteSpace(mcVer)) mcVer = resolved.Id;
 
                                 // ⭐ 如果版本名是 fabric-loader 开头的，去继承链里找
                                 if (mcVer.Contains("fabric-loader"))
@@ -1433,7 +1471,16 @@ namespace IllusionLauncherWPF
                     if (action == "get_loader_versions")
                     {
                         var loader = root.GetProperty("loader").GetString();
-                        var baseVer = root.GetProperty("versionId").GetString();
+
+                        // 优先用前端解析出的「真实 MC 版本」。
+                        // versionId 可能是实例 id（如 "1.12.2-forge-14.23.5.2864"），
+                        // 直接拿它去过滤加载器版本会永远匹配不到。
+                        string baseVer = null;
+                        if (root.TryGetProperty("mcVersion", out var mcv) && mcv.ValueKind == JsonValueKind.String)
+                            baseVer = mcv.GetString();
+                        if (string.IsNullOrWhiteSpace(baseVer))
+                            baseVer = root.GetProperty("versionId").GetString();
+
                         _ = Task.Run(() => FetchLoaderVersionsAsync(loader, baseVer, core));
                     }
 
@@ -2720,6 +2767,47 @@ namespace IllusionLauncherWPF
             }
         }
 
+        /// <summary>
+        /// NeoForge 版本号规则：MC 1.20.4 -> "20.4.xxx"；1.21.1 -> "21.1.xxx"。
+        /// 返回 null 表示该 MC 版本没有 NeoForge（例如 1.20.1）。
+        /// </summary>
+        /// <summary>
+        /// 自动内存分配（与前端 calcAutoMemoryMB 完全一致）：
+        /// ≤8G 取 30%，≤16G 取 40%，≤32G 取 50%，更大取 55%；
+        /// 按 256MB 对齐，限制在 1024–8192MB。
+        /// </summary>
+        private static int CalcAutoMemoryMB()
+        {
+            int total = NativeMemory.GetTotalPhysicalMemoryMB();
+            if (total <= 0) return 4096;
+
+            double ratio = total <= 8192 ? 0.30
+                         : total <= 16384 ? 0.40
+                         : total <= 32768 ? 0.50
+                         : 0.55;
+
+            int mb = (int)(Math.Floor(total * ratio / 256.0) * 256);
+            if (mb < 1024) mb = 1024;
+            if (mb > 8192) mb = 8192;
+            return mb;
+        }
+
+        /// <summary>是否是标准 MC 版本号，如 1.12.2 / 1.20.1 / 26.2。</summary>
+        private static bool IsMcVersionLike(string v)
+        {
+            if (string.IsNullOrWhiteSpace(v)) return false;
+            return System.Text.RegularExpressions.Regex.IsMatch(v, @"^\d+\.\d+(\.\d+)?$");
+        }
+
+        private static string NeoPrefixFor(string mcVersion)
+        {
+            if (string.IsNullOrWhiteSpace(mcVersion)) return null;
+            var parts = mcVersion.Split('.');
+            if (parts.Length >= 3 && parts[0] == "1") return parts[1] + "." + parts[2] + ".";
+            if (parts.Length == 2) return parts[0] + "." + parts[1] + ".";   // 新版本号体系，如 26.2
+            return null;
+        }
+
         private async Task FetchLoaderVersionsAsync(string loader, string baseVersion, CoreWebView2 sender)
         {
             Debug.WriteLine($"[LoaderVersions] ⭐ 开始获取 {loader} 的版本列表...");
@@ -2777,8 +2865,8 @@ namespace IllusionLauncherWPF
                                 {
                                     if (verStr.StartsWith(baseVersion + "-"))
                                         tempList.Add(verStr.Substring(baseVersion.Length + 1));
-                                    else
-                                        tempList.Add(verStr);
+                                    else if (!verStr.Contains("-"))
+                                        tempList.Add(verStr); // 只有纯 loader 版本号才采用，别的 MC 版本一律丢弃
                                 }
                             }
                             tempList.Reverse();
@@ -2806,7 +2894,7 @@ namespace IllusionLauncherWPF
                         foreach (Match m in matches)
                         {
                             var v = m.Groups[1].Value;
-                            if (v.Contains(baseVersion) || baseVersion == "1.20.1")
+                            if (NeoPrefixFor(baseVersion) is string neoPrefix && v.StartsWith(neoPrefix, StringComparison.Ordinal))
                                 tempList.Add(v);
                         }
                         tempList.Reverse();
@@ -7385,7 +7473,8 @@ namespace IllusionLauncherWPF
                 var vdir = Path.Combine(versionsDir, versionId);
                 if (File.Exists(Path.Combine(vdir, "modrinth.index.json"))
                     || File.Exists(Path.Combine(vdir, "manifest.json"))
-                    || File.Exists(Path.Combine(vdir, "instance.cfg")))
+                    || File.Exists(Path.Combine(vdir, "instance.cfg"))
+                    || File.Exists(Path.Combine(vdir, "illusion.modpack.json")))
                     return "modpack";
 
                 var jp = Path.Combine(versionsDir, versionId, versionId + ".json");
@@ -8459,6 +8548,20 @@ namespace IllusionLauncherWPF
                 };
                 var versionJsonText = JsonSerializer.Serialize(versionJson, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(Path.Combine(versionDir, folderName + ".json"), versionJsonText);
+
+                // 标记为整合包：DetectLoaderKind 靠这个文件把它归到「整合包」分类
+                try
+                {
+                    var modpackMarker = new
+                    {
+                        name = folderName,
+                        source = "illusion-launcher",
+                        installedAt = DateTime.Now.ToString("s")
+                    };
+                    File.WriteAllText(Path.Combine(versionDir, "illusion.modpack.json"),
+                        JsonSerializer.Serialize(modpackMarker, new JsonSerializerOptions { WriteIndented = true }));
+                }
+                catch { }
 
                 // 6. 下载 mod
                 int total = 0;

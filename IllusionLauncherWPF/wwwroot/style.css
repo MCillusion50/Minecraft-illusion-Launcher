@@ -2970,9 +2970,14 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
 	max-width: calc(100vw - 48px);
 	padding: 26px 26px 22px;
 	border-radius: 26px;
-	background: rgba(24,24,32,.94);
-	border: 1px solid rgba(255,255,255,.16);
-	box-shadow: 0 30px 80px rgba(0,0,0,.55);
+	background: rgba(22,22,30,.92);
+	border: 1px solid rgba(255,255,255,.22);
+	box-shadow:
+		0 30px 80px rgba(0,0,0,.55),
+		0 0 0 1px rgba(255,255,255,.06),
+		inset 0 1px 0 rgba(255,255,255,.18);
+	-webkit-backdrop-filter: blur(18px) saturate(140%);
+	backdrop-filter: blur(18px) saturate(140%);
 	color: #fff;
 	box-sizing: border-box;
 }
@@ -3009,9 +3014,10 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
 	margin-top: 16px;
 }
 .fu-bar{
-	height: 8px;
+	height: 9px;
 	border-radius: 999px;
-	background: rgba(255,255,255,.12);
+	background: rgba(255,255,255,.10);
+	box-shadow: inset 0 1px 3px rgba(0,0,0,.55);
 	overflow: hidden;
 }
 .fu-bar-fill{
@@ -3019,7 +3025,11 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
 	width: 0;
 	height: 100%;
 	border-radius: 999px;
-	background: linear-gradient(90deg, #4ade80, #22d3ee);
+	background: linear-gradient(90deg, rgba(190,238,255,.95), #ffffff);
+	box-shadow:
+		0 0 10px rgba(190,238,255,.75),
+		0 0 22px rgba(140,210,255,.45),
+		inset 0 0 6px rgba(255,255,255,.9);
 	transition: width .18s ease;
 }
 .fu-progress-text{
@@ -3027,23 +3037,146 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
 	justify-content: space-between;
 	margin-top: 8px;
 	font-size: 12px;
-	opacity: .85;
+	opacity: .88;
+	text-shadow: 0 0 12px rgba(180,230,255,.35);
 }
 .fu-btn{
 	margin-top: 20px;
 	width: 100%;
-	height: 44px;
-	border: 0;
+	height: 46px;
+	border: 1px solid rgba(255,255,255,.95);
 	border-radius: 999px;
 	cursor: pointer;
 	font-family: inherit;
 	font-size: 14px;
 	font-weight: 800;
 	letter-spacing: 1px;
-	color: #08210f;
-	background: linear-gradient(135deg, #7bf1a8, #4ade80);
-	transition: filter .2s ease, transform .12s ease;
+	color: #0b0b12;
+	background: linear-gradient(180deg, rgba(255,255,255,.97), rgba(232,242,255,.88));
+	box-shadow:
+		0 0 0 1px rgba(255,255,255,.20),
+		0 0 18px rgba(150,215,255,.35),
+		0 10px 28px rgba(0,0,0,.35),
+		inset 0 1px 0 rgba(255,255,255,.95);
+	transition: box-shadow .22s ease, transform .12s ease, filter .2s ease;
 }
-.fu-btn:hover{ filter: brightness(1.06); }
-.fu-btn:active{ transform: scale(.985); }
-.fu-btn:disabled{ cursor: default; filter: grayscale(.35) brightness(.9); }
+.fu-btn:hover{
+	filter: brightness(1.04);
+	box-shadow:
+		0 0 0 1px rgba(255,255,255,.35),
+		0 0 26px rgba(160,225,255,.55),
+		0 12px 32px rgba(0,0,0,.4),
+		inset 0 1px 0 rgba(255,255,255,1);
+}
+.fu-btn:active{
+	transform: scale(.985);
+}
+.fu-btn:disabled{
+	cursor: default;
+	filter: grayscale(.4) brightness(.88);
+	box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
+}
+
+/* ===== 下拉层级修复：展开时必须压过后面的卡片 / 按钮 / 输入框 ===== */
+.custom-dropdown { position: relative; }
+.custom-dropdown:has(.custom-select-options.show) { z-index: 9999; }
+.custom-select-options { z-index: 9999; }
+/* ===== 下拉兜底方案：改为「容器内展开」（不再浮层），彻底绕开 overflow 裁剪和 z-index 覆盖 ===== */
+.custom-dropdown .custom-select-options.show{
+	position: static !important;
+	inset: auto !important;
+	top: auto !important;
+	bottom: auto !important;
+	left: auto !important;
+	right: auto !important;
+	display: block !important;
+	margin-top: 8px;
+	max-height: 240px;
+	overflow-y: auto;
+	z-index: auto !important;
+}
+
+/* ===== 账户卡片内嵌登录 ===== */
+.acc-quick-login{
+	display: none;
+	flex-direction: column;
+	gap: 10px;
+	width: 100%;
+	margin-top: 6px;
+}
+.acc-quick-login .sec{
+	margin-top: 6px;
+	text-align: center;
+	font-size: 12px;
+	letter-spacing: 2px;
+	opacity: .6;
+}
+.acc-quick-login input{
+	height: 42px;
+	padding: 0 16px;
+	border-radius: 21px;
+	border: 1px solid rgba(255,255,255,.55);
+	background: rgba(255,255,255,.12);
+	color: #fff;
+	font-family: inherit;
+	font-size: 14px;
+	outline: none;
+	transition: border-color .2s ease, background .2s ease;
+}
+.acc-quick-login input::placeholder{ color: rgba(255,255,255,.45); }
+.acc-quick-login input:focus{
+	border-color: #fff;
+	background: rgba(255,255,255,.18);
+}
+.acc-quick-login button{
+	height: 42px;
+	border-radius: 21px;
+	border: 1px solid #fff;
+	cursor: pointer;
+	font-family: inherit;
+	font-size: 14px;
+	font-weight: 700;
+	color: #0b0b12;
+	background: linear-gradient(180deg, #fff, rgba(232,242,255,.9));
+	box-shadow: 0 0 16px rgba(150,215,255,.35), inset 0 1px 0 rgba(255,255,255,.9);
+	transition: transform .12s ease, box-shadow .2s ease;
+}
+.acc-quick-login button:hover{ box-shadow: 0 0 24px rgba(160,225,255,.55), inset 0 1px 0 #fff; }
+.acc-quick-login button:active{ transform: scale(.97); }
+.acc-quick-login button.ghost{
+	color: #fff;
+	background: rgba(255,255,255,.12);
+	border-color: rgba(255,255,255,.7);
+	box-shadow: none;
+}
+.acc-quick-login button.ghost:hover{ background: rgba(255,255,255,.2); }
+.acc-quick-login .err{
+	min-height: 16px;
+	text-align: center;
+	font-size: 12px;
+	color: #ff9a9a;
+}
+
+
+/* 登录按钮统一为「边缘光」玻璃样式（不要白色发光底） */
+.acc-quick-login button,
+.acc-quick-login button.ghost{
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	color: #fff;
+	background: rgba(255,255,255,.10);
+	border: 1px solid rgba(255,255,255,.72);
+	box-shadow: 0 0 14px rgba(180,230,255,.22), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.acc-quick-login button:hover,
+.acc-quick-login button.ghost:hover{
+	background: rgba(255,255,255,.18);
+	box-shadow: 0 0 24px rgba(180,230,255,.45), inset 0 1px 0 rgba(255,255,255,.55);
+}
+.acc-quick-login button svg{
+	width: 18px;
+	height: 18px;
+	flex: 0 0 auto;
+}

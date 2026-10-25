@@ -121,6 +121,19 @@
 										</svg>
 									</button>
 								</div>
+								<!-- 未登录时的快捷登录面板（取代头像/昵称/管理按钮区域） -->
+<div id="accQuickLogin" class="acc-quick-login" style="display:none;">
+    <div class="sec">离线登录</div>
+    <input id="quickOfflineName" type="text" placeholder="输入用户名" maxlength="16"
+           onkeydown="if(event.key==='Enter')quickAddOffline()" />
+    <button onclick="quickAddOffline()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 21v-1.2a7.5 7.5 0 0 1 15 0V21"/></svg><span>添加离线账户</span></button>
+
+    <div class="sec">正版登录</div>
+    <button class="ghost" onclick="quickMsLogin()"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="0.5" fill="#f25022"/><rect x="13" y="3" width="8" height="8" rx="0.5" fill="#7fba00"/><rect x="3" y="13" width="8" height="8" rx="0.5" fill="#00a4ef"/><rect x="13" y="13" width="8" height="8" rx="0.5" fill="#ffb900"/></svg><span>使用 Microsoft 登录</span></button>
+
+    <div class="err" id="quickLoginErr"></div>
+</div>
+
 								<button class="version-select-btn" id="versionSelectBtn" onclick="toggleVersionSelect()">
 									<span id="selectedVersionText">选择版本</span>
 									<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;stroke-width:2.5;fill:none;">
@@ -922,9 +935,10 @@
 
 									<div class="dl-config-row">
 										<div class="label">选择下载的资源版本</div>
-										<select id="dlResVersionList" class="input-select" onchange="onDlResVersionChange()">
-											<option value="">正在解析...</option>
-										</select>
+										<div class="custom-dropdown" id="dlResVersionDropdown">
+<div class="custom-select-display" id="dlResVersionDisplay" onclick="toggleDlResOptions(event)">正在解析…</div>
+<div class="custom-select-options" id="dlResVersionList"></div>
+</div>
 									</div>
 								</div>
 
@@ -1154,7 +1168,7 @@
 			display.textContent = `${window.selectedVer} (最新)`;
 
 			// 只显示前 15 个，防止列表太长
-			data.versions.slice(0, 15).forEach((v, index) => {
+			data.versions.forEach((v, index) => {
 			const div = document.createElement('div');
 			div.className = `custom-option ${index === 0 ? 'selected' : ''}`;
 			div.textContent = index === 0 ? `${v} (最新)` : v;
@@ -3295,7 +3309,7 @@ function saveGlobalConfig() {
 
 										// ⭐ 核心新增：通知后端去拉取版本列表
 										if (pendingDownload) {
-										post({ action: 'get_loader_versions', loader: loader, versionId: pendingDownload.versionId });
+										post({ action: 'get_loader_versions', loader: loader, versionId: pendingDownload.versionId, mcVersion: window._dlRealMcVersion || '' });
 										}
 										}
 										}
@@ -4363,7 +4377,7 @@ document.querySelectorAll(".top-tabs, .sub-tabs").forEach(function (b) { bindPil
 										}
 
 										if (resList) {
-										resList.innerHTML = '<option value="">请选择资源版本</option>';
+										resList.innerHTML = ''; setDlResVersion('');
 										window._selectedResVersion = '';
 
 										let mcVersions = new Set();
@@ -4375,11 +4389,17 @@ document.querySelectorAll(".top-tabs, .sub-tabs").forEach(function (b) { bindPil
 										let sortedMcVersions = Array.from(mcVersions).sort((a, b) => b.localeCompare(a, undefined, {numeric: true}));
 
 										sortedMcVersions.forEach(ver => {
-										const opt = document.createElement('option');
-										opt.value = ver;
-										opt.textContent = ver;
-										resList.appendChild(opt);
-										});
+const item = document.createElement('div');
+item.className = 'custom-option';
+item.dataset.value = ver;
+item.textContent = ver;
+item.onclick = function (ev) {
+ev.stopPropagation();
+setDlResVersion(ver);
+if (typeof onDlResVersionChange === 'function') onDlResVersionChange();
+};
+resList.appendChild(item);
+});
 										}
 
 										// 自动点一下本地第一个版本，触发兼容检测
@@ -4399,19 +4419,113 @@ document.querySelectorAll(".top-tabs, .sub-tabs").forEach(function (b) { bindPil
 										let isSupported = window._modVersionsData.some(v => v.game_versions && v.game_versions.includes(mcVer));
 
 										if (isSupported) {
-										const sel = document.getElementById('dlResVersionList');
-										if (sel) {
-										sel.value = mcVer;
-										if (typeof onDlResVersionChange === 'function') onDlResVersionChange();
-										}
+										setDlResVersion(mcVer, false);
+if (typeof onDlResVersionChange === 'function') onDlResVersionChange();
 										} else {
 										fileContainer.innerHTML = `<div class="loading-placeholder" style="padding:10px; color:#ff5c5c; border-color:rgba(255,80,80,0.3);">⚠️ 不兼容：该资源不支持你的实例版本 (${mcVer})</div>`;
 										}
 										}
 
-										function onDlResVersionChange() {
-										const sel = document.getElementById('dlResVersionList');
-										const mcVer = sel ? sel.value : '';
+										// ---- 资源版本自定义下拉（复用 .custom-dropdown 样式，显示全部版本）----
+// ---- 把剩余的原生 <select> 就地升级成自定义下拉（复用 .custom-dropdown 样式）----
+// 思路：隐藏原生 select，在它前面插入一套自定义结构，用 MutationObserver
+// 把 options 变化同步过来，change 事件原样派发，所以原有业务代码完全不用改。
+function upgradeNativeSelect(selectId) {
+    var sel = document.getElementById(selectId);
+    if (!sel || sel.dataset.customized === '1') return;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'custom-dropdown';
+
+    var disp = document.createElement('div');
+    disp.className = 'custom-select-display';
+
+    var box = document.createElement('div');
+    box.className = 'custom-select-options';
+
+    wrap.appendChild(disp);
+    wrap.appendChild(box);
+    sel.parentNode.insertBefore(wrap, sel);
+    sel.style.display = 'none';
+    sel.dataset.customized = '1';
+
+    function sync() {
+        box.innerHTML = '';
+        var opts = Array.prototype.slice.call(sel.options);
+        opts.forEach(function (opt) {
+            if (!opt.value && !opt.textContent.trim()) return;
+            var item = document.createElement('div');
+            item.className = 'custom-option';
+            if (opt.value === sel.value) item.classList.add('selected');
+            item.textContent = opt.textContent;
+            item.onclick = function (e) {
+                e.stopPropagation();
+                sel.value = opt.value;
+                disp.textContent = opt.textContent;
+                box.classList.remove('show');
+                box.querySelectorAll('.custom-option').forEach(function (x) { x.classList.remove('selected'); });
+                item.classList.add('selected');
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+            };
+            box.appendChild(item);
+        });
+        var cur = sel.options[sel.selectedIndex];
+        disp.textContent = cur ? cur.textContent : '请选择';
+    }
+
+    disp.onclick = function (e) {
+        e.stopPropagation();
+        var willOpen = !box.classList.contains('show');
+        document.querySelectorAll('.custom-select-options.show').forEach(function (x) { x.classList.remove('show'); });
+        if (willOpen) { sync(); box.classList.add('show'); }
+    };
+
+    new MutationObserver(sync).observe(sel, { childList: true, subtree: true });
+    sel.addEventListener('change', function () {
+        var cur = sel.options[sel.selectedIndex];
+        disp.textContent = cur ? cur.textContent : '请选择';
+    });
+    sync();
+}
+
+function initCustomSelects() {
+    ['dlMcVersionSelect', 'dlLocalVersionSelect', 'gMemPreset'].forEach(upgradeNativeSelect);
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCustomSelects);
+} else {
+    initCustomSelects();
+}
+
+function toggleDlResOptions(ev) {
+if (ev) ev.stopPropagation();
+const box = document.getElementById('dlResVersionList');
+if (!box) return;
+const willOpen = !box.classList.contains('show');
+document.querySelectorAll('.custom-select-options.show').forEach(function (e) { e.classList.remove('show'); });
+if (willOpen) box.classList.add('show');
+}
+
+function setDlResVersion(v, close) {
+window._selectedResVersion = v || '';
+const disp = document.getElementById('dlResVersionDisplay');
+if (disp) disp.textContent = v || '请选择资源版本';
+const box = document.getElementById('dlResVersionList');
+if (box) {
+if (close !== false) box.classList.remove('show');
+box.querySelectorAll('.custom-option').forEach(function (el) {
+el.classList.toggle('selected', (el.dataset.value || '') === (v || ''));
+});
+}
+}
+
+document.addEventListener('click', function () {
+const box = document.getElementById('dlResVersionList');
+if (box && box.classList.contains('show')) box.classList.remove('show');
+});
+
+function onDlResVersionChange() {
+										const mcVer = window._selectedResVersion || '';
 										const fileContainer = document.getElementById('dlFileListContainer');
 										if (!fileContainer) return;
 										fileContainer.innerHTML = '';
@@ -4454,8 +4568,7 @@ document.querySelectorAll(".top-tabs, .sub-tabs").forEach(function (b) { bindPil
 										}
 
 										function onDlResVersionChange() {
-										const sel = document.getElementById('dlResVersionList');
-										const mcVer = sel ? sel.value : '';
+										const mcVer = window._selectedResVersion || '';
 										const fileContainer = document.getElementById('dlFileListContainer');
 										fileContainer.innerHTML = '';
 
@@ -4538,7 +4651,81 @@ document.querySelectorAll(".top-tabs, .sub-tabs").forEach(function (b) { bindPil
 										}
 
 										// ⭐ 接收 C# 解析出来的真实版本信息
-										window.onVersionRealInfo = function(data) {
+										// ===== 账户卡片内嵌登录（未登录时显示）=====
+function quickLoginErr(msg) {
+    var el = document.getElementById('quickLoginErr');
+    if (el) el.textContent = msg || '';
+}
+
+function quickAddOffline() {
+    var inp = document.getElementById('quickOfflineName');
+    var name = inp ? (inp.value || '').trim() : '';
+    if (!name) { quickLoginErr('请输入用户名'); return; }
+    quickLoginErr('');
+    // 复用账户管理里已有的离线添加逻辑
+    var src = document.getElementById('newAccountName');
+    if (src) src.value = name;
+    try {
+        addOfflineAccount();
+        if (inp) inp.value = '';
+    } catch (e) {
+        quickLoginErr('添加失败：' + (e && e.message ? e.message : e));
+    }
+}
+
+function quickMsLogin() {
+quickLoginErr('');
+try {
+// 直接展开右侧「微软登录」卡片（msPanel），不要先弹账户管理列表
+var mp = document.getElementById('msPanel');
+var alreadyOpen = mp && mp.classList.contains('show');
+if (!alreadyOpen && typeof toggleMsPanel === 'function') toggleMsPanel();
+} catch (e) {
+quickLoginErr('启动登录失败：' + (e && e.message ? e.message : e));
+}
+}
+
+// 监听「未登录」字样：未登录 -> 显示登录面板，隐藏头像/昵称/管理按钮
+(function () {
+    var nameEl = document.getElementById('homeAccountName');
+    if (!nameEl) return;
+
+    function apply() {
+        var loggedOut = (nameEl.textContent || '').trim() === '未登录';
+        var pane = document.getElementById('accQuickLogin');
+        if (pane) pane.style.display = loggedOut ? 'flex' : 'none';
+
+        ['skinAvatar', 'homeAccountName', 'homeAccountType'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.style.display = loggedOut ? 'none' : '';
+        });
+
+        var row = document.querySelector('.account-panel .action-row');
+        if (row) row.style.display = loggedOut ? 'none' : '';
+
+        // 未登录时连版本选择和启动按钮一起隐藏，避免"没登录还能开游戏"
+        ['.version-select-btn', '.launch-btn-main'].forEach(function (sel) {
+            var el = document.querySelector('.account-panel ' + sel);
+            if (el) el.style.display = loggedOut ? 'none' : '';
+        });
+    }
+
+    new MutationObserver(apply).observe(nameEl, { childList: true, characterData: true, subtree: true });
+    apply();
+})();
+
+window.onVersionRealInfo = function(data) {
+// 记录真实 MC 版本：后续请求加载器版本必须用它做兼容过滤
+window._dlRealMcVersion = (data && data.mcVersion) ? data.mcVersion : '';
+// 切换实例 / 版本后必须重新拉取加载器版本列表，
+// 否则下拉里还是上一个版本的加载器，用户会选到不兼容的版本
+if (pendingDownload && window.dlConfigState && window.dlConfigState.loader && window.dlConfigState.loader !== 'none') {
+const _lt = document.getElementById('dlLoaderDisplayText');
+const _lo = document.getElementById('dlLoaderOptionsList');
+if (_lt) _lt.textContent = '正在获取…';
+if (_lo) _lo.innerHTML = '';
+post({ action: 'get_loader_versions', loader: window.dlConfigState.loader, versionId: pendingDownload.versionId, mcVersion: window._dlRealMcVersion });
+}
 										const fileContainer = document.getElementById('dlFileListContainer');
 										if (!fileContainer) return;
 
