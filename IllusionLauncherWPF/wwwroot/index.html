@@ -5148,9 +5148,16 @@ window.onJavaDetected = function(data) {
 											}
 
 											window.onSkinUploadResult = function (data) {
-												if (data && data.ok) showSideToast('皮肤已同步到正版', '重新进入游戏即可看到新皮肤', 260);
-												else showSideToast('皮肤同步失败', (data && data.error) ? data.error : '未知错误', 220);
-											};
+				var okToast = data && data.ok;
+				showSideToast(
+					okToast ? '皮肤已同步到正版' : '皮肤同步失败',
+					okToast ? '重新进入游戏即可看到新皮肤' : ((data && data.error) ? data.error : '未知错误'),
+					100
+				);
+				// 统一 5 秒后自动收起（showSideToast 本身不会自动隐藏）
+				if (window._toastHideTimer) clearTimeout(window._toastHideTimer);
+				window._toastHideTimer = setTimeout(hideSideToast, 5000);
+			};
 
 											window.onSkinApplied = async function(data) {
 											if (!data || !data.fileName) return;
