@@ -41,15 +41,15 @@ namespace IllusionLauncherWPF
                     return false;
                 }
                 var pngBytes = await File.ReadAllBytesAsync(skinPngPath);
-                var pngBase64 = Convert.ToBase64String(pngBytes);
 
-                // 3. 构造 JSON（Mojang 要求 base64 data URI）
-                var body = new
-                {
-                    variant = variant,
-                    url = "data:image/png;base64," + pngBase64
-                };
-                var json = JsonSerializer.Serialize(body);
+                // 3. 用 multipart/form-data 上传。
+                //    注意：JSON + data URI 的写法会被 Azure Front Door 的 WAF 直接 403
+                //    （返回 "The request is blocked." 的 HTML 页），multipart 才能正常通过。
+                var form = new MultipartFormDataContent();
+                form.Add(new StringContent(string.IsNullOrEmpty(variant) ? "classic" : variant, Encoding.UTF8), "variant");
+                var filePart = new ByteArrayContent(pngBytes);
+                filePart.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                form.Add(filePart, "file", Path.GetFileName(skinPngPath));
 
                 // 4. POST
                 var req = new HttpRequestMessage(HttpMethod.Post,
@@ -58,10 +58,7 @@ namespace IllusionLauncherWPF
                 req.Headers.TryAddWithoutValidation("User-Agent",
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
                 req.Headers.TryAddWithoutValidation("Accept", "application/json");
-                req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
-                req.Headers.TryAddWithoutValidation("Origin", "https://www.minecraft.net");
-                req.Headers.TryAddWithoutValidation("Referer", "https://www.minecraft.net/");
-                req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                req.Content = form;
 
                 using var skinHttp = new HttpClient();
                 Debug.WriteLine($"[SkinUpload] URL: {req.RequestUri}");
