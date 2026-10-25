@@ -419,7 +419,7 @@ namespace IllusionLauncherWPF
                                 {
                                     ok = ok,
                                     username = username,
-                                    error = ok ? "" : "上传失败，看日志"
+                                    error = ok ? "" : SkinUploadLastError
                                 }, JsonOpts());
                                 await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onSkinUploadResult({json})"); });
                             }

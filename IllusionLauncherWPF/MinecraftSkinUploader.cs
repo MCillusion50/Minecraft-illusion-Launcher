@@ -13,6 +13,9 @@ namespace IllusionLauncherWPF
     {
         // ⭐ 上传皮肤到 Mojang（正版账号）
         // variant: "classic"（Steve 模型）或 "slim"（Alex 模型）
+        /// <summary>最近一次上传失败的可读原因（直接展示到 UI）。</summary>
+        private static string SkinUploadLastError = "";
+
         private async Task<bool> UploadSkinToMojangAsync(string username, string skinPngPath, string variant = "classic")
         {
             try
@@ -70,13 +73,13 @@ namespace IllusionLauncherWPF
 
                 if (!resp.IsSuccessStatusCode)
                 {
-                    // 常见错误
-                    if (respText.Contains("NOT_ALLOWED"))
-                        Debug.WriteLine("[SkinUpload] 账号未购买 MC 或未成年");
-                    else if (respText.Contains("RATE_LIMITED"))
-                        Debug.WriteLine("[SkinUpload] 上传太频繁，稍后再试");
-                    else if (respText.Contains("DUPLICATE"))
-                        Debug.WriteLine("[SkinUpload] 该皮肤已存在");
+                    var hint = "";
+                    if (respText.Contains("NOT_ALLOWED")) hint = "账号未购买 MC 或受限";
+                    else if (respText.Contains("RATE_LIMITED")) hint = "上传太频繁，稍后再试";
+                    else if (respText.Contains("DUPLICATE")) hint = "该皮肤已存在";
+                    SkinUploadLastError = ("HTTP " + (int)resp.StatusCode + " " + hint + " " + respText).Trim();
+                    if (SkinUploadLastError.Length > 280) SkinUploadLastError = SkinUploadLastError.Substring(0, 280);
+                    Debug.WriteLine("[SkinUpload] 失败：" + SkinUploadLastError);
                     return false;
                 }
 
