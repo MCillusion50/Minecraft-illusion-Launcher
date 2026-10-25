@@ -151,48 +151,8 @@ namespace IllusionLauncherWPF
 
                 var zipPath = Path.Combine(root, string.IsNullOrWhiteSpace(assetName) ? "update.zip" : assetName);
 
-                // ---- 1. 下载（最多重试 3 次）----
-                using (var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) })
-                {
-                    http.DefaultRequestHeaders.UserAgent.ParseAdd("IllusionLauncher/" + CurrentVersion);
-
-                    Exception last = null;
-                    for (var attempt = 0; attempt < 3; attempt++)
-                    {
-                        try
-                        {
-                            using var resp = await http.GetAsync(assetUrl, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
-                            resp.EnsureSuccessStatusCode();
-                            var total = resp.Content.Headers.ContentLength ?? expectedSize;
-
-                            using var src = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
-                            using var dst = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None);
-                            var buffer = new byte[81920];
-                            long received = 0;
-                            int read;
-                            var lastTick = Environment.TickCount;
-                            while ((read = await src.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
-                            {
-                                await dst.WriteAsync(buffer, 0, read).ConfigureAwait(false);
-                                received += read;
-                                if (Environment.TickCount - lastTick > 200)
-                                {
-                                    lastTick = Environment.TickCount;
-                                    var pct = total > 0 ? (int)(received * 100 / total) : 0;
-                                    await ReportProgressAsync(sender, "下载更新包", pct).ConfigureAwait(false);
-                                }
-                            }
-                            last = null;
-                            break;
-                        }
-                        catch (Exception ex)
-                        {
-                            last = ex;
-                            await Task.Delay(1200).ConfigureAwait(false);
-                        }
-                    }
-                    if (last != null) throw last;
-                }
+                // ---- 1. 下载（镜像优先，逐个回退，失败自动换源）----
+                await DownloadWithMirrorsAsync(assetUrl, zipPath, expectedSize, sender).ConfigureAwait(false);
 
                 // ---- 2. 大小校验 ----
                 var fileLen = new FileInfo(zipPath).Length;
@@ -259,6 +219,7 @@ namespace IllusionLauncherWPF
             }
             catch (Exception ex)
             {
+                UpdateLog("[FAILED] " + ex);
                 await EvalAsync(sender, "onUpdateFailed(" + JsonSerializer.Serialize(new { error = ex.Message }) + ");").ConfigureAwait(false);
                 try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { }
             }
@@ -266,6 +227,7 @@ namespace IllusionLauncherWPF
 
         private Task ReportProgressAsync(CoreWebView2 sender, string phase, int percent)
         {
+            UpdateLog($"[progress] {phase} {percent}%");
             return EvalAsync(sender, "onUpdateProgress(" + JsonSerializer.Serialize(new { phase, percent }) + ");");
         }
 
@@ -288,6 +250,208 @@ namespace IllusionLauncherWPF
             using var sha = SHA256.Create();
             using var fs = File.OpenRead(path);
             return Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+        }
+
+        /// <summary>更新日志：写到 %LOCALAPPDATA%\illusionLauncher\update.log</summary>
+        internal static void UpdateLog(string message)
+        {
+            try
+            {
+                var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "illusionLauncher");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(Path.Combine(dir, "update.log"),
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + "  " + message + Environment.NewLine);
+            }
+            catch { }
+        }
+
+        /// <summary>下载加速镜像（按顺序尝试，前面失败自动换下一个，最后回退 GitHub 原地址）</summary>
+        private static readonly string[] UpdateMirrors =
+        {
+            // 实测国内公共加速节点当前要么连不上、要么比原地址还慢，所以原地址优先，镜像仅作兜底
+            "https://gh-proxy.com/",
+            "https://ghproxy.net/"
+        };
+
+        private async Task DownloadWithMirrorsAsync(string assetUrl, string zipPath, long expectedSize, CoreWebView2 sender)
+        {
+            var candidates = new System.Collections.Generic.List<string> { assetUrl };
+            foreach (var m in UpdateMirrors) candidates.Add(m + assetUrl);
+
+            Exception last = null;
+            foreach (var url in candidates)
+            {
+                var tag = url.StartsWith("https://github.com", StringComparison.OrdinalIgnoreCase)
+                    ? "origin"
+                    : url.Substring(8).Split('/')[0];
+
+                try
+                {
+                    UpdateLog("download try: " + tag);
+                    var segOk = false;
+                    if (expectedSize <= 0 || expectedSize > 4L * 1024 * 1024)
+                        segOk = await TrySegmentedDownloadAsync(url, zipPath, expectedSize, sender).ConfigureAwait(false);
+                    if (!segOk)
+                        await DownloadToAsync(url, zipPath, expectedSize, sender).ConfigureAwait(false);
+
+                    var len = new FileInfo(zipPath).Length;
+                    if (expectedSize > 0 && len != expectedSize)
+                        throw new InvalidOperationException($"大小不匹配（{len}/{expectedSize}）");
+
+                    UpdateLog("download ok: " + tag);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    last = ex;
+                    UpdateLog($"download fail [{tag}]: {ex.Message}");
+                }
+            }
+
+            throw new InvalidOperationException("所有下载源均失败，最后一个错误：" + (last == null ? "未知" : last.Message));
+        }
+
+        private const int SegmentCount = 8;
+        private const long MinSegmentSize = 512L * 1024;
+
+        /// <summary>多线程分段下载（Range）。不支持 / 失败就返回 false，由调用方降级单线程</summary>
+        private async Task<bool> TrySegmentedDownloadAsync(string url, string destPath, long expectedSize, CoreWebView2 sender)
+        {
+            long total = expectedSize;
+            try
+            {
+                using var probe = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+                probe.DefaultRequestHeaders.UserAgent.ParseAdd("IllusionLauncher/" + CurrentVersion);
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
+                using var resp = await probe.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                if (resp.StatusCode != System.Net.HttpStatusCode.PartialContent) return false;
+                var cr = resp.Content.Headers.ContentRange;
+                if (cr != null && cr.Length.HasValue && cr.Length.Value > 0) total = cr.Length.Value;
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (total <= MinSegmentSize * 2) return false;
+
+            var segCount = (int)Math.Min(SegmentCount, Math.Max(2, total / MinSegmentSize));
+            var segSize = total / segCount;
+            var parts = new string[segCount];
+            var done = new long[segCount];
+            var tasks = new System.Collections.Generic.List<Task>();
+
+            for (var i = 0; i < segCount; i++)
+            {
+                var idx = i;
+                var from = (long)idx * segSize;
+                var to = idx == segCount - 1 ? total - 1 : from + segSize - 1;
+                parts[idx] = destPath + "." + idx + ".part";
+
+                tasks.Add(Task.Run(async () =>
+                {
+                    for (var attempt = 0; attempt < 3; attempt++)
+                    {
+                        try
+                        {
+                            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+                            http.DefaultRequestHeaders.UserAgent.ParseAdd("IllusionLauncher/" + CurrentVersion);
+                            using var req2 = new HttpRequestMessage(HttpMethod.Get, url);
+                            req2.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(from, to);
+                            using var r = await http.SendAsync(req2, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+                            r.EnsureSuccessStatusCode();
+
+                            using var s = await r.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                            using var f = new FileStream(parts[idx], FileMode.Create, FileAccess.Write, FileShare.None);
+                            var buf = new byte[65536];
+                            int n;
+                            while ((n = await s.ReadAsync(buf, 0, buf.Length).ConfigureAwait(false)) > 0)
+                            {
+                                await f.WriteAsync(buf, 0, n).ConfigureAwait(false);
+                                done[idx] += n;
+                            }
+                            f.Close();
+                            if (new FileInfo(parts[idx]).Length == to - from + 1) return;
+                        }
+                        catch { }
+                    }
+                    throw new IOException("分段 " + idx + " 下载失败");
+                }));
+            }
+
+            var reporter = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    await Task.Delay(250).ConfigureAwait(false);
+                    long sum = 0;
+                    foreach (var d in done) sum += d;
+                    var pct = total > 0 ? (int)(sum * 100 / total) : 0;
+                    await ReportProgressAsync(sender, "下载更新包", pct).ConfigureAwait(false);
+                    if (tasks.TrueForAll(t => t.IsCompleted)) break;
+                }
+            });
+
+            try
+            {
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+                await reporter.ConfigureAwait(false);
+            }
+            catch
+            {
+                foreach (var p in parts) { try { if (File.Exists(p)) File.Delete(p); } catch { } }
+                UpdateLog("segmented download failed, fallback to single thread");
+                return false;
+            }
+
+            try
+            {
+                using (var outFs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    for (var i = 0; i < segCount; i++)
+                    {
+                        using var pf = File.OpenRead(parts[i]);
+                        await pf.CopyToAsync(outFs).ConfigureAwait(false);
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var p in parts) { try { if (File.Exists(p)) File.Delete(p); } catch { } }
+            }
+
+            UpdateLog($"segmented download ok: {segCount} threads, {total} bytes");
+            return new FileInfo(destPath).Length == total;
+        }
+
+        private async Task DownloadToAsync(string url, string zipPath, long expectedSize, CoreWebView2 sender)
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("IllusionLauncher/" + CurrentVersion);
+
+            using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+            resp.EnsureSuccessStatusCode();
+
+            var total = resp.Content.Headers.ContentLength ?? expectedSize;
+
+            using var src = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            using var dst = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            var buffer = new byte[81920];
+            long received = 0;
+            int read;
+            var lastTick = Environment.TickCount;
+            while ((read = await src.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+            {
+                await dst.WriteAsync(buffer, 0, read).ConfigureAwait(false);
+                received += read;
+                if (Environment.TickCount - lastTick > 200)
+                {
+                    lastTick = Environment.TickCount;
+                    var pct = total > 0 ? (int)(received * 100 / total) : 0;
+                    await ReportProgressAsync(sender, "下载更新包", pct).ConfigureAwait(false);
+                }
+            }
         }
 
         /// <summary>在 UI 线程执行 JS（CoreWebView2 要求）</summary>

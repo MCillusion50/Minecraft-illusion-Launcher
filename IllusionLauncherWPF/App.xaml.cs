@@ -27,6 +27,30 @@ namespace IllusionLauncherWPF
                 return;
             }
 
+            // 清理上一次自更新遗留的 .old 备份（当时被占用删不掉的，现在不锁了）
+            try
+            {
+                foreach (var oldFile in System.IO.Directory.GetFiles(AppContext.BaseDirectory, "*.old", System.IO.SearchOption.AllDirectories))
+                {
+                    try { System.IO.File.Delete(oldFile); } catch { }
+                }
+            }
+            catch { }
+
+            // 刚更新完那一次，旧进程可能还没完全退出，5 秒后再补删一次
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                await System.Threading.Tasks.Task.Delay(5000);
+                try
+                {
+                    foreach (var oldFile in System.IO.Directory.GetFiles(AppContext.BaseDirectory, "*.old", System.IO.SearchOption.AllDirectories))
+                    {
+                        try { System.IO.File.Delete(oldFile); } catch { }
+                    }
+                }
+                catch { }
+            });
+
             // 提升连接数上限（ProjBobcat 多线程下载的前提）
             ServicePointManager.DefaultConnectionLimit = 512;
 
