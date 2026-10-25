@@ -1,9 +1,10 @@
 # ===== 构建产物（体积大、可随时重建）=====
 build/
-IllusionLauncherWPF/bin/
-IllusionLauncherWPF/obj/
+**/bin/
+**/obj/
 publish/
 dist/
+payload.zip
 
 # ===== IDE / 用户配置 =====
 .vs/
