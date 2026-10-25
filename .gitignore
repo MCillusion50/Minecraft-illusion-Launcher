@@ -1,0 +1,20 @@
+# ===== 构建产物（体积大、可随时重建，不进仓库）=====
+bin/
+obj/
+publish/
+dist/
+
+# ===== IDE / 用户配置 =====
+.vs/
+*.user
+*.suo
+*.DotSettings.user
+
+# ===== 日志与崩溃转储 =====
+*.log
+crash*.txt
+hs_err_pid*.log
+
+# ===== 系统文件 =====
+Thumbs.db
+desktop.ini
