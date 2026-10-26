@@ -43,12 +43,17 @@ Write-Host ("   程序文件: {0} 个, {1} MB" -f (Get-ChildItem $pubDir -Recurs
 # ---------- 4. 打两个 zip ----------
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+# $excludePattern 可以是单个通配符串，也可以是通配符数组
 function New-ZipFromDir($srcDir, $zipPath, $excludePattern) {
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    $patterns = @($excludePattern | Where-Object { $_ })
     $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
     try {
         Get-ChildItem $srcDir -Recurse -File | Where-Object {
-            -not $excludePattern -or $_.FullName -notlike $excludePattern
+            $f = $_
+            $hit = $false
+            foreach ($pat in $patterns) { if ($f.FullName -like $pat) { $hit = $true; break } }
+            -not $hit
         } | ForEach-Object {
             $rel = $_.FullName.Substring($srcDir.Length + 1)
             [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $rel, 'Optimal')
@@ -56,9 +61,16 @@ function New-ZipFromDir($srcDir, $zipPath, $excludePattern) {
     } finally { $zip.Dispose() }
 }
 
-Write-Step '打包更新包（不含 EasyTier）'
+# 更新包不含 EasyTier 的大头（core 20MB + 原生库），但必须带上 easytier-cli.exe（6MB）：
+# 加房要靠它枚举对端主机名，老用户走自动更新时若不带它就会一直「未在 EasyTier 网络中发现联机中心」。
+Write-Step '打包更新包（EasyTier 只带 easytier-cli.exe）'
 $updateZip = Join-Path $distDir "IllusionLauncher-$version-win-x64.zip"
-New-ZipFromDir $pubDir $updateZip "*\EasyTier\*"
+New-ZipFromDir $pubDir $updateZip @(
+    "*\EasyTier\easytier-core.exe",
+    "*\EasyTier\wintun.dll",
+    "*\EasyTier\WinDivert64.sys",
+    "*\EasyTier\Packet.dll"
+)
 
 Write-Step '打包安装器载荷（含 EasyTier）'
 $payloadZip = Join-Path $root 'build\payload.zip'

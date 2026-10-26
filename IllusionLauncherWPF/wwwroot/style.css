@@ -2139,7 +2139,7 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
 }
 /* ---- single-webgl-glass : 圆角对齐 WebGL(data-radius=32)，CSS 不再叠第二层 ---- */
 #panel-thread .glass-panel {
-  border-radius: 32px !important;
+  border-radius: 20px !important;
   corner-shape: round !important;
   background: transparent !important;
   backdrop-filter: none !important;
@@ -2155,6 +2155,11 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
   border: none !important;
   box-shadow: none !important;
   border-radius: 999px;
+}
+/* ---- top-tabs-rounder : 只加大外层胶囊内边距，让玻璃光边与内部按钮拉开距离，轮廓更圆润 ---- */
+.top-tabs {
+  padding: 6px !important;
+  gap: 6px !important;
 }
 /* ---- pill-jelly-glass : 滑块玻璃化 + 果冻回弹 ---- */
 .pill-indicator {
@@ -3403,6 +3408,182 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
 	padding: 10px 8px 8px;
 }
 
+
+/* ================= version-list-height-fix（新增） =================
+   1) 版本面板高度由 JS 同步为左侧账户卡高度（syncCardHeights）
+   2) 面板改 flex 纵向，列表填满剩余空间内部滚动，底部完整可见 */
+.home-layout .version-panel{
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+/* 仅当 JS 把面板显示出来（内联 display:block）时，才改成 flex 纵向 */
+.home-layout .version-panel[style*="display: block"],
+.home-layout .version-panel.show{
+  display: flex !important;
+  flex-direction: column !important;
+}
+.home-layout .version-panel > #versionPanelViewList.view-active{
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+}
+#versionSelectList{
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-bottom: 8px !important;
+  scroll-padding-bottom: 8px;
+}
+
+/* ================= settings-capsule（新增） =================
+   游戏目录 / 背景 两块设置卡：胶囊外形 + 背景路径隐藏
+   用 :has() 精确命中，不影响下面的「清理垃圾」卡片 */
+.settings-grid > .settings-card-small{
+  min-height: 76px !important;
+  padding: 0 14px 0 30px !important;
+  border-radius: 999px !important;
+  box-sizing: border-box !important;
+}
+/* 胶囊两端更圆润的玻璃感 */
+.settings-grid > .settings-card-small{
+  background: rgba(255,255,255,.06) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 6px 20px rgba(0,0,0,.18) !important;
+}
+/* 内部按钮在胶囊里更靠右、更圆 */
+.settings-grid > .settings-card-small .small-btn{
+  border-radius: 999px !important;
+  height: 44px !important;
+  padding: 0 24px !important;
+}
+/* 背景路径文字隐藏（保留「背景」标签与按钮） */
+.settings-grid > .settings-card-small #bgPathText{
+  display: none !important;
+}
+/* 背景卡：标签靠左，按钮组推到最右 */
+.settings-grid > .settings-card-small:has(#bgPathText) > .section-label{
+  margin-right: auto !important;
+}
+
+/* ===== 清理垃圾卡：胶囊化 + 内部横向排布 =====
+   注意：这块不在 .settings-grid 内，是它的兄弟节点，所以不能带 .settings-grid > */
+.settings-card-small:has(button[onclick*="clean_garbage"]){
+  min-height: 76px !important;
+  padding: 0 14px 0 30px !important;
+  border-radius: 999px !important;
+  box-sizing: border-box !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  width: 100% !important;
+  margin-top: 12px !important;
+  background: rgba(255,255,255,.06) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 6px 20px rgba(0,0,0,.18) !important;
+}
+/* 内部横向行铺满 */
+.settings-card-small:has(button[onclick*="clean_garbage"]) > div:first-child{
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  gap: 14px !important;
+}
+/* 清理按钮：胶囊 + 靠右 */
+.settings-card-small:has(button[onclick*="clean_garbage"]) .small-btn{
+  border-radius: 999px !important;
+  height: 44px !important;
+  padding: 0 24px !important;
+  flex: 0 0 auto !important;
+}
+
+/* ================= skin-toolbar-capsule（新增） =================
+   1) 右侧工具栏外面包一层大胶囊底板
+   2) 内部四个按钮去掉常驻底/描边，只留文字，保留 hover + 选中态，加灵动动效
+   3) 关闭按钮保留红色语义 */
+.skin-panel .skin-toolbar{
+  gap: 6px !important;
+  padding: 7px !important;
+  background: rgba(255,255,255,.10) !important;
+  border: 1px solid rgba(255,255,255,.22) !important;
+  border-radius: 999px !important;
+  -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+  backdrop-filter: blur(20px) saturate(160%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 6px 20px rgba(0,0,0,.22) !important;
+  width: fit-content !important;
+  margin-left: auto !important;
+  flex: 0 0 auto !important;
+}
+/* 内部按钮：透明化，只留文字 */
+.skin-panel .skin-pill{
+  height: 36px !important;
+  padding: 0 22px !important;
+  border: none !important;
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+  border-radius: 999px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: .3px !important;
+  color: rgba(255,255,255,.82) !important;
+  transition: background .2s ease, color .2s ease, transform .18s cubic-bezier(.34,1.5,.64,1), box-shadow .2s ease !important;
+  will-change: transform;
+}
+/* 关掉旧的鼠标跟随边缘光，避免透明按钮挂 1.5px 白边 */
+.skin-panel .skin-pill::after{ display: none !important; }
+/* hover 灵动：微浮起 + 轻微放大 + 柔光 */
+.skin-panel .skin-pill:hover{
+  background: rgba(255,255,255,.16) !important;
+  color: #ffffff !important;
+  transform: translateY(-1px) scale(1.04) !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.30) !important;
+}
+.skin-panel .skin-pill:active{
+  transform: scale(.96) !important;
+  transition-duration: .1s !important;
+}
+/* 选中态：白色实心小胶囊（皮肤 / 披风） */
+.skin-panel .skin-pill.active{
+  background: #ffffff !important;
+  color: #111318 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.9) !important;
+}
+.skin-panel .skin-pill.active:hover{
+  background: #ffffff !important;
+  transform: translateY(-1px) scale(1.04) !important;
+}
+/* 关闭按钮：胶囊内圆形，平时低调，hover 变红 */
+.skin-panel .skin-pill-close{
+  width: 36px !important;
+  padding: 0 !important;
+  color: rgba(255,255,255,.72) !important;
+  background: transparent !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.skin-panel .skin-pill-close:hover{
+  background: rgba(255,80,80,.42) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(255,60,60,.35) !important;
+}
+
+/* ================= skin-name-hidden（新增） =================
+   只隐藏皮肤/披风卡片的文件名，收紧留白 */
+.skin-list-card .skin-name{ display: none !important; }
+.skin-list-card{ padding: 8px 8px 6px !important; }
+.skin-list-card img{ margin-bottom: 6px; }
 
 /* CAPE-THUMB-V7：用 img 做像素级裁剪（background-image 的 pixelated 在 WebView2 不生效） */
 .skin-panel .cape-thumb-wrap{

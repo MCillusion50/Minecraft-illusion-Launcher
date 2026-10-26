@@ -5,7 +5,7 @@
 			<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 				<title>Minecraft illusion Launcher</title>
 				<script src="https://unpkg.com/skinview3d@3.4.0/bundles/skinview3d.bundle.js"></script>
-				<link rel="stylesheet" href="style.css?v=20261025e30">
+				<link rel="stylesheet" href="style.css?v=20261026e31">
 			</head>
      	<body>
 	
@@ -388,7 +388,7 @@
 					<div class="page" id="page-versions">
 						<div class="page-title">联机</div>
 
-						<div class="glass-panel" id="onlinePlayerPanel" style="display:flex; align-items:center; gap:14px; padding:14px 18px;">
+						<div class="glass-panel" id="onlinePlayerPanel" data-radius="32" style="display:flex; align-items:center; gap:14px; padding:12px 26px 12px 12px; border-radius:999px; overflow:hidden;">
 							<div class="acc-avatar" style="width:42px; height:42px; border-radius:0; overflow:hidden; background:rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
 								<img id="onlineAvatar" src="" style="width:100%; height:100%; object-fit:cover; image-rendering:pixelated;" onerror="this.style.opacity='0'">
 							</div>
@@ -451,7 +451,7 @@
 
 					<div class="page" id="page-download">
 						<div class="page-title">下载</div>
-						<div class="top-tabs">
+						<div class="top-tabs" data-radius="26">
 							<div class="top-tab active" data-type="game" onclick="switchTopTab('game')">游戏版本</div>
 							<div class="top-tab" data-type="mod" onclick="switchTopTab('mod')">Mod</div>
 							<div class="top-tab" data-type="resourcepack" onclick="switchTopTab('resourcepack')">资源包</div>
@@ -630,21 +630,34 @@
 						</div>
 
 						<div class="top-panel" id="panel-thread">
-							<div class="glass-panel" data-radius="32">
+							<div class="glass-panel" data-radius="20">
 								<div class="section-label" style="margin-top:0;">多线程下载</div>
-								<div style="display:flex; flex-direction:column; gap:12px;">
+								<div style="display:flex; flex-direction:column; gap:14px;">
+									<!-- 文件下载链接 -->
 									<input type="text" id="tdUrl" class="input-text" placeholder="粘贴直链（http / https）">
-									<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-										<button class="small-btn" onclick="pickTdSave()" style="border-radius:999px;">选择保存位置</button>
-										<span id="tdPath" style="font-size:12px; color:rgba(255,255,255,0.75); word-break:break-all;">未选择</span>
+
+									<!-- 文件存放路径：整行可点选 -->
+									<button class="small-btn" onclick="pickTdSave()" style="display:flex; align-items:center; justify-content:center; gap:8px; width:100%; height:44px; padding:0 20px; border-radius:999px; overflow:hidden;">
+										<span style="flex:0 0 auto;">文件存放路径</span>
+										<span id="tdPath" style="flex:1; min-width:0; font-size:12px; font-weight:600; opacity:.72; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right;">未选择</span>
+									</button>
+
+									<!-- 并发数 / 分片：两个胶囊并排居中 -->
+									<div style="display:flex; gap:16px; justify-content:center; flex-wrap:wrap;">
+										<label style="display:flex; align-items:center; gap:10px; padding:0 18px; height:44px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18); font-size:13px; font-weight:700; color:rgba(255,255,255,0.88);">
+											并发数
+											<input type="number" id="tdConns" value="96" min="1" max="256" class="input-text" style="width:64px; height:30px; padding:0 10px; text-align:center; border-radius:999px;">
+										</label>
+										<label style="display:flex; align-items:center; gap:10px; padding:0 18px; height:44px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.18); font-size:13px; font-weight:700; color:rgba(255,255,255,0.88);">
+											分片(MB)
+											<input type="number" id="tdChunk" value="1" min="1" max="16" class="input-text" style="width:64px; height:30px; padding:0 10px; text-align:center; border-radius:999px;">
+										</label>
 									</div>
-									<div style="display:flex; gap:18px; align-items:center; flex-wrap:wrap;">
-										<label style="font-size:13px; color:rgba(255,255,255,0.85);">并发数<input type="number" id="tdConns" value="96" min="1" max="256" class="input-text" style="width:80px; margin-left:6px;"></label>
-										<label style="font-size:13px; color:rgba(255,255,255,0.85);">分片(MB)<input type="number" id="tdChunk" value="1" min="1" max="16" class="input-text" style="width:80px; margin-left:6px;"></label>
-									</div>
-									<div style="display:flex; gap:10px;">
-										<button class="small-btn" onclick="startThreadDownload()" style="flex:1; border-radius:999px; background:rgba(59,130,246,0.92); border-color:rgba(59,130,246,0.92);">开始下载</button>
-										<button class="small-btn" onclick="cancelThreadDownload()" style="flex:1; border-radius:999px;">取消</button>
+
+									<!-- 开始下载 / 取消：等宽并排 -->
+									<div style="display:flex; gap:12px;">
+										<button class="small-btn" onclick="startThreadDownload()" style="flex:1; height:44px; border-radius:999px; background:rgba(59,130,246,0.92); border-color:rgba(59,130,246,0.92);">开始下载</button>
+										<button class="small-btn" onclick="cancelThreadDownload()" style="flex:1; height:44px; border-radius:999px;">取消</button>
 									</div>
 									<div id="tdProgressBox" style="display:none;">
 										<div class="progress-bar"><div class="progress-fill" id="tdFill"></div></div>
@@ -2391,6 +2404,7 @@ function triggerMemRipple(btnEl) {
 						requestAnimationFrame(() => {
 							panel.classList.add('show');
 							list.classList.add('expanded');
+							if (typeof syncCardHeights === 'function') syncCardHeights();
 						});
 					});
 				} else {
@@ -6317,5 +6331,205 @@ gl.uniform1i(uIsRing, t.isRing ? 1 : 0); // 👈 加在 if/else 判断的后面
   }
 })();
 </script>
+
+<!-- ===== 按住跟手位移（圆球指示器式），松手平滑归位、不回弹 ===== -->
+<style id="press-stretch-css">
+  .press-follow{
+    /* 松手：快速平滑归位，无过冲、不回弹 */
+    transition: transform .18s cubic-bezier(.25,.6,.35,1) !important;
+    will-change: transform;
+  }
+  .press-follow-dragging{
+    /* 拖拽中：直给，完全跟手 */
+    transition: none !important;
+  }
+  /* 按住时按钮内部的柔和光晕（被按钮圆角裁切） */
+  .press-glow{
+    position: absolute;
+    left: 0; top: 0;
+    width: 150px; height: 150px;
+    margin-left: -75px; margin-top: -75px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(circle closest-side,
+        rgba(255,255,255,0.42) 0%,
+        rgba(255,255,255,0.18) 42%,
+        rgba(255,255,255,0.06) 62%,
+        transparent 75%);
+    mix-blend-mode: screen;
+    opacity: 0;
+    transition: opacity .16s ease;
+    will-change: transform, opacity;
+  }
+  .press-glow.on{ opacity: 1; }
+  /* 按下时光晕在按钮内部，按钮自身建立层叠上下文，避免盖住文字 */
+  .press-has-glow{ isolation: isolate; }
+</style>
+<script id="press-stretch-js">
+(function () {
+  'use strict';
+  // 只作用于按钮类，避开拖拽型的 tab / 滑块 / 侧边导航
+  var SELECTOR = [
+    '.small-btn', '.ver-download-btn', '.cta-btn', '.primary-btn',
+    '.launch-btn-main', '.action-square', '.folder-btn', '.fi-btn',
+    '.about-btn', '.drop-btn-ok', '.drop-btn-cancel', '.win-btn',
+    '.skin-pill', '.skin-btns button', '.version-select-btn',
+    '.acc-quick-login button', '.loader-card', '.dl-loader-card'
+  ].join(',');
+
+  var MAX = 0.06;       // 最大拉伸 6%
+  var cur = null;
+  var startX = 0, startY = 0, cx = 0, cy = 0;
+  var released = [];    // 被临时放开 overflow 的祖先
+  var glow = null;      // 跟随鼠标的光晕
+
+  function positionGlow(el, x, y) {
+    if (!glow || !el) return;
+    // 鼠标在布局空间中的位置（考虑按钮当前缩放）
+    var r = el.getBoundingClientRect();
+    var sx = el._curSx || 1, sy = el._curSy || 1;
+    var dx = (x - r.left) / sx;
+    var dy = (y - r.top) / sy;
+    glow.style.transform = 'translate(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px)';
+  }
+
+  function showGlow(el, x, y) {
+    if (glow && glow.parentNode && glow.parentNode !== el) hideGlow();
+    if (!glow) {
+      glow = document.createElement('div');
+      glow.className = 'press-glow';
+    }
+    if (glow.parentNode !== el) el.appendChild(glow);
+    positionGlow(el, x, y);
+    // 下一帧加 on，保证淡入过渡生效
+    requestAnimationFrame(function () { if (glow) glow.classList.add('on'); });
+  }
+
+  function moveGlow(el, x, y) {
+    positionGlow(el, x, y);
+  }
+
+  function hideGlow() {
+    if (!glow) return;
+    var g = glow;
+    glow = null;
+    g.classList.remove('on');
+    window.setTimeout(function () {
+      if (g.parentNode) g.parentNode.removeChild(g);
+    }, 220);
+  }
+
+  // 向上遍历祖先，临时放开 overflow:hidden（不动 auto/scroll 的滚动容器）
+  function releaseAncestors(el) {
+    released = [];
+    var p = el.parentElement;
+    while (p && p !== document.body) {
+      var cs = getComputedStyle(p);
+      var ov = cs.overflow;
+      if (ov === 'hidden' || (cs.overflowX === 'hidden' && cs.overflowY === 'hidden')) {
+        released.push({ el: p, ov: p.style.overflow, ovx: p.style.overflowX, ovy: p.style.overflowY });
+        p.style.overflow = 'visible';
+        p.style.overflowX = 'visible';
+        p.style.overflowY = 'visible';
+      }
+      p = p.parentElement;
+    }
+  }
+
+  function restoreAncestors() {
+    for (var i = 0; i < released.length; i++) {
+      var o = released[i];
+      o.el.style.overflow = o.ov;
+      o.el.style.overflowX = o.ovx;
+      o.el.style.overflowY = o.ovy;
+    }
+    released = [];
+  }
+
+  function reset(el) {
+    if (!el) return;
+    el.classList.remove('press-follow-dragging');
+    el.style.transform = '';
+    el.style.transformOrigin = '';
+    el.style.zIndex = '';
+    el.style.position = el._origPos || '';
+    el.classList.add('press-follow');
+    window.setTimeout(function () {
+      if (!el.classList.contains('press-follow-dragging')) el.classList.remove('press-follow');
+    }, 220);
+    restoreAncestors();
+    el.style.overflow = el._origOverflow || '';
+    el.classList.remove('press-has-glow');
+    hideGlow();
+  }
+
+  document.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    var el = e.target && e.target.closest ? e.target.closest(SELECTOR) : null;
+    if (!el) return;
+    if (el.disabled) return;
+    cur = el;
+    startX = e.clientX;
+    startY = e.clientY;
+    var r = el.getBoundingClientRect();
+    cx = r.left + r.width / 2;
+    cy = r.top + r.height / 2;
+    el._w0 = r.width;
+    el._h0 = r.height;
+    el.style.transformOrigin = '50% 50%';
+    el.classList.add('press-follow');
+    el._origPos = el.style.position || '';
+    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+    el.style.zIndex = '999';
+    releaseAncestors(el);
+    // 裁切光晕到按钮圆角内
+    el._origOverflow = el.style.overflow || '';
+    el.style.overflow = 'hidden';
+    el.classList.add('press-has-glow');
+    el._curSx = 1; el._curSy = 1;
+    showGlow(el, e.clientX, e.clientY);
+    try { el.setPointerCapture(e.pointerId); } catch (err) { }
+  }, true);
+
+  document.addEventListener('pointermove', function (e) {
+    if (!cur) return;
+    var w0 = cur._w0 || 1, h0 = cur._h0 || 1;
+    // 鼠标相对原始中心的方向与强度
+    var nx = (e.clientX - cx) / (w0 / 2);
+    var ny = (e.clientY - cy) / (h0 / 2);
+    nx = Math.max(-1.2, Math.min(1.2, nx));
+    ny = Math.max(-1.2, Math.min(1.2, ny));
+    var ax = Math.min(1, Math.abs(nx));
+    var ay = Math.min(1, Math.abs(ny));
+    // smoothstep，让中心附近过渡平缓
+    var ssx = ax * ax * (3 - 2 * ax);
+    var ssy = ay * ay * (3 - 2 * ay);
+    // transform-origin 移到鼠标的对侧：鼠标在右 → 原点在左 → 向右延伸
+    var ox = nx >= 0 ? 50 - 50 * ssx : 50 + 50 * ssx;
+    var oy = ny >= 0 ? 50 - 50 * ssy : 50 + 50 * ssy;
+    // 朝鼠标方向拉长
+    var sx = 1 + MAX * ax;
+    var sy = 1 + MAX * ay;
+    cur.classList.add('press-follow-dragging');
+    cur.style.transformOrigin = ox.toFixed(2) + '% ' + oy.toFixed(2) + '%';
+    cur.style.transform = 'scale(' + sx.toFixed(4) + ',' + sy.toFixed(4) + ')';
+    cur._curSx = sx; cur._curSy = sy;
+    moveGlow(cur, e.clientX, e.clientY);
+  }, true);
+
+  function end() {
+    if (!cur) return;
+    var el = cur;
+    cur = null;
+    reset(el);
+  }
+
+  document.addEventListener('pointerup', end, true);
+  document.addEventListener('pointercancel', end, true);
+  window.addEventListener('blur', end);
+})();
+</script>
+
 </body>
 			</html>

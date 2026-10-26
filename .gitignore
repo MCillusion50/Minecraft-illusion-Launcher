@@ -30,3 +30,6 @@ fix-mslogin*.js
 check-js.js
 fix-*.js
 *.bak
+# ===== 临时备份（wwwroot 下手工备份的前端文件）=====
+wwwroot/_backup_*/
+**/_backup_*/

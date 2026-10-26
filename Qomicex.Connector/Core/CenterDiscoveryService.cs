@@ -33,7 +33,13 @@ public class CenterDiscoveryService
             await Task.Delay(500, ct);
         }
 
-        throw new CenterNotFoundException("未在 EasyTier 网络中发现联机中心（超时 30s）");
+        // 区分「组件缺失」和「真连不上」，否则用户只看到误导性的网络错误
+        if (easyTier.CliMissing)
+        {
+            throw new CenterNotFoundException("缺少联机组件 easytier-cli.exe，无法枚举对端节点（请重新安装启动器）");
+        }
+
+        throw new CenterNotFoundException("未在 EasyTier 网络中发现联机中心（超时 30s）。请确认房主仍在房间内、你的网络能连上 EasyTier 中继。");
     }
 
     public static CenterDiscoveryResult? TryParseCenter(IReadOnlyList<EasyTierNode> nodes)

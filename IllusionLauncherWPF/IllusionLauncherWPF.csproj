@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <Version>0.1.5</Version>
+    <Version>0.1.5.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -32,13 +32,16 @@
     <Content Include="Assets\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- EasyTier: only the 4 files needed for LAN play (code only calls easytier-core.exe).
-         Removed easytier-web-embed.exe / easytier-web.exe / easytier-cli.exe -> saves 67MB.
+    <!-- EasyTier: the files needed for LAN play.
+         注意：easytier-cli.exe（6MB）必须保留！加房时 CenterDiscoveryService 靠它执行 `peer`
+         枚举对端主机名，缺了它永远发现不了联机中心，30 秒后报「未在 EasyTier 网络中发现联机中心」。
+         已移除 easytier-web-embed.exe / easytier-web.exe（约 61MB）。
          Keep the EasyTier\ folder level: code resolves BaseDirectory\EasyTier\. -->
-    <Content Include="EasyTier\easytier-core.exe;EasyTier\wintun.dll;EasyTier\WinDivert64.sys;EasyTier\Packet.dll">
+    <Content Include="EasyTier\easytier-core.exe;EasyTier\easytier-cli.exe;EasyTier\wintun.dll;EasyTier\WinDivert64.sys;EasyTier\Packet.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="wwwroot\**\*">
+    <!-- wwwroot 下的 _backup_* 是临时备份，不打进安装包 -->
+    <Content Include="wwwroot\**\*" Exclude="wwwroot\_backup_*\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="aria2c.exe">

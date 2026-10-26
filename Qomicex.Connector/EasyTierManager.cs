@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Qomicex.Connector.Models;
@@ -18,6 +19,9 @@ public class EasyTierManager : IDisposable
     public string? VirtualIp { get; private set; }
     public string? NodeId { get; private set; }
     public string? InstanceId { get; private set; }
+
+    /// <summary>找不到 easytier-cli.exe —— 没有它就无法枚举对端主机名，加房必然失败。</summary>
+    public bool CliMissing => FindCli() is null;
 
     public EasyTierManager(ILogger<EasyTierManager> logger)
     {
@@ -207,60 +211,80 @@ public class EasyTierManager : IDisposable
         return Task.FromResult<IReadOnlyList<EasyTierNode>>(nodes);
     }
 
+    private bool _cliMissingLogged;
+
     private IReadOnlyList<EasyTierNode>? TryGetNodesViaCli()
     {
         try
         {
             var cliPath = FindCli();
-            if (cliPath is null) return null;
+            if (cliPath is null)
+            {
+                if (!_cliMissingLogged)
+                {
+                    _cliMissingLogged = true;
+                    _logger.LogWarning("未找到 easytier-cli.exe，无法枚举对端节点（加房会一直发现不了联机中心）");
+                }
+                return null;
+            }
 
+            // 用 -o json peer：表格输出靠列位置 + 竖线切分，EasyTier 升级改了列顺序就废；
+            // JSON 里直接有 ipv4 / hostname 字段，稳得多。
             var proc = Process.Start(new ProcessStartInfo
             {
                 FileName = cliPath,
-                Arguments = "peer",
+                Arguments = "-o json peer",
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             });
 
             if (proc is null) return null;
-            proc.WaitForExit(5000);
-            if (proc.ExitCode != 0) return null;
-
-            var output = proc.StandardOutput.ReadToEnd();
-            var nodes = new List<EasyTierNode>();
-
-            foreach (var line in output.Split('\n'))
+            using (proc)
             {
-                var parts = line.Split('|').Select(p => p.Trim()).ToArray();
-                // 格式: | ipv4 | hostname | cost | ...
-                // parts[0] 为空（前导 |），parts[1]=IP（可能带 /24）
-                if (parts.Length >= 3)
+                var readTask = proc.StandardOutput.ReadToEndAsync();
+                if (!proc.WaitForExit(5000))
                 {
-                    var ip = parts[1];
-                    var slash = ip.IndexOf('/');
-                    if (slash > 0) ip = ip[..slash];
-                    var hostname = parts[2];
-                    if (System.Net.IPAddress.TryParse(ip, out _) && hostname.Length > 0)
-                    {
-                        nodes.Add(new EasyTierNode
-                        {
-                            VirtualIp = ip,
-                            Hostname = hostname,
-                            NodeId = ""
-                        });
-                    }
+                    try { proc.Kill(true); } catch { }
+                    return null;
                 }
-            }
+                if (proc.ExitCode != 0) return null;
 
-            return nodes;
+                var json = readTask.GetAwaiter().GetResult();
+                if (string.IsNullOrWhiteSpace(json)) return null;
+
+                var nodes = new List<EasyTierNode>();
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array) return null;
+
+                foreach (var el in doc.RootElement.EnumerateArray())
+                {
+                    if (el.ValueKind != JsonValueKind.Object) continue;
+
+                    var ip = el.TryGetProperty("ipv4", out var ipEl) ? ipEl.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(ip) && el.TryGetProperty("cidr", out var cidrEl))
+                        ip = cidrEl.GetString()?.Split('/')[0];
+                    if (string.IsNullOrWhiteSpace(ip) || !System.Net.IPAddress.TryParse(ip, out _))
+                        continue;
+
+                    var hostname = el.TryGetProperty("hostname", out var hEl) ? hEl.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(hostname)) continue;
+
+                    var nodeId = "";
+                    if (el.TryGetProperty("id", out var idEl))
+                        nodeId = idEl.ValueKind == JsonValueKind.Number ? idEl.GetRawText() : (idEl.GetString() ?? "");
+
+                    nodes.Add(new EasyTierNode { VirtualIp = ip!, Hostname = hostname!, NodeId = nodeId });
+                }
+
+                return nodes;
+            }
         }
         catch
         {
             return null;
         }
     }
-
     private string? FindCli()
     {
         var cliName = OperatingSystem.IsWindows() ? "easytier-cli.exe" : "easytier-cli";
