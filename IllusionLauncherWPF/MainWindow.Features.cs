@@ -390,7 +390,72 @@ namespace IllusionLauncherWPF
                         return true;
                     }
 
-                case "upload_skin_to_mojang":
+                case "get_capes":
+                        {
+                            var capeUser = root.GetProperty("username").GetString();
+                            _ = Task.Run(async () =>
+                            {
+                                var result = await FetchProfileAsync(capeUser);
+                                string payload;
+                                if (result.ok)
+                                {
+                                    try
+                                    {
+                                        using var pdoc = JsonDocument.Parse(result.json);
+                                        var capes = new List<object>();
+                                        if (pdoc.RootElement.TryGetProperty("capes", out var capesArr) && capesArr.ValueKind == JsonValueKind.Array)
+                                        {
+                                            var _capeRows = new List<(string id, string state, string alias, string url)>();
+                                            foreach (var cp in capesArr.EnumerateArray())
+                                            {
+                                                _capeRows.Add((
+                                                    cp.TryGetProperty("id", out var idEl) ? idEl.GetString() : "",
+                                                    cp.TryGetProperty("state", out var stEl) ? stEl.GetString() : "",
+                                                    cp.TryGetProperty("alias", out var alEl) ? alEl.GetString() : "披风",
+                                                    cp.TryGetProperty("url", out var uEl2) ? uEl2.GetString() : ""));
+                                            }
+
+                                            // 并发下载，避免 8 个披风串行等到前端超时
+                                            var _capeThumbs = await Task.WhenAll(_capeRows.Select(r => FetchCapeThumbAsync(r.url)));
+
+                                            for (var _ci = 0; _ci < _capeRows.Count; _ci++)
+                                            {
+                                                var _row = _capeRows[_ci];
+                                                capes.Add(new
+                                                {
+                                                    id = _row.id,
+                                                    state = _row.state,
+                                                    alias = _row.alias,
+                                                    url = _row.url,
+                                                    thumb = _capeThumbs[_ci]
+                                                });
+                                            }
+                                        }
+                                        payload = JsonSerializer.Serialize(new { ok = true, capes });
+                                    }
+                                    catch (Exception ex) { payload = JsonSerializer.Serialize(new { ok = false, error = "解析失败：" + ex.Message }); }
+                                }
+                                else payload = JsonSerializer.Serialize(new { ok = false, error = result.error });
+
+                                await RunOnUI(() => { _ = sender.ExecuteScriptAsync("onCapesLoaded(" + payload + ")"); });
+                            });
+                            return true;
+                        }
+
+                    case "set_cape":
+                        {
+                            var capeUser2 = root.GetProperty("username").GetString();
+                            var capeId = root.TryGetProperty("capeId", out var cidEl) && cidEl.ValueKind == JsonValueKind.String ? cidEl.GetString() : "";
+                            _ = Task.Run(async () =>
+                            {
+                                var result = await SetActiveCapeAsync(capeUser2, capeId);
+                                var payload = result.ok ? "{\"ok\":true}" : JsonSerializer.Serialize(new { ok = false, error = result.error });
+                                await RunOnUI(() => { _ = sender.ExecuteScriptAsync("onCapeSet(" + payload + ")"); });
+                            });
+                            return true;
+                        }
+
+                    case "upload_skin_to_mojang":
                     {
                         var username = root.GetProperty("username").GetString();
                         var skinId = root.GetProperty("skinId").GetString();

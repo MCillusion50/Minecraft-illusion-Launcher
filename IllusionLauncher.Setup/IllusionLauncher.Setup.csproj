@@ -14,7 +14,7 @@
     <!-- 声明 x64 平台：否则 VS 在解决方案的 x64 配置下找不到该项目，无法设为启动项目 -->
     <Platforms>AnyCPU;x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
-    <Version>0.1.2</Version>
+    <Version>0.1.3</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <Product>Illusion Launcher 安装程序</Product>
     <Company>MCillusion50</Company>

@@ -28,3 +28,5 @@ desktop.ini
 patch-*.js
 fix-mslogin*.js
 check-js.js
+fix-*.js
+*.bak

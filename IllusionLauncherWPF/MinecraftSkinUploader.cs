@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -46,6 +46,148 @@ namespace IllusionLauncherWPF
             {
                 return false;
             }
+        }
+
+        /// <summary>读取正版账号 profile（含 capes 列表）。</summary>
+                /// <summary>披风纹理裁剪：取 (1,1) 的 10x16 区域，放大 8 倍成 80x128，返回 dataUri。</summary>
+        internal static string BuildCapeThumbDataUri(byte[] pngBytes)
+        {
+            try
+            {
+                System.Windows.Media.Imaging.BitmapImage src;
+                using (var ms = new MemoryStream(pngBytes))
+                {
+                    src = new System.Windows.Media.Imaging.BitmapImage();
+                    src.BeginInit();
+                    src.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    src.StreamSource = ms;
+                    src.EndInit();
+                }
+                src.Freeze();
+                if (src.PixelWidth < 11 || src.PixelHeight < 17) return null;
+
+                var cropped = new System.Windows.Media.Imaging.CroppedBitmap(src, new System.Windows.Int32Rect(1, 1, 10, 16));
+                var conv = new System.Windows.Media.Imaging.FormatConvertedBitmap(cropped, System.Windows.Media.PixelFormats.Pbgra32, null, 0);
+                var pix = new byte[10 * 16 * 4];
+                conv.CopyPixels(pix, 10 * 4, 0);
+
+                const int f = 8, w = 10 * f, h = 16 * f;
+                var dst = new byte[w * h * 4];
+                for (var y = 0; y < h; y++)
+                {
+                    for (var x = 0; x < w; x++)
+                    {
+                        var si = ((y / f) * 10 + (x / f)) * 4;
+                        var di = (y * w + x) * 4;
+                        dst[di] = pix[si]; dst[di + 1] = pix[si + 1];
+                        dst[di + 2] = pix[si + 2]; dst[di + 3] = pix[si + 3];
+                    }
+                }
+
+                var outBmp = System.Windows.Media.Imaging.BitmapSource.Create(w, h, 96, 96,
+                    System.Windows.Media.PixelFormats.Pbgra32, null, dst, w * 4);
+                outBmp.Freeze();
+
+                var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(outBmp));
+                using var outMs = new MemoryStream();
+                enc.Save(outMs);
+                return "data:image/png;base64," + Convert.ToBase64String(outMs.ToArray());
+            }
+            catch { return null; }
+        }
+
+        /// <summary>下载披风纹理并生成缩略图。</summary>
+        internal async Task<string> FetchCapeThumbAsync(string url)
+        {
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+                var bytes = await http.GetByteArrayAsync(url);
+                return BuildCapeThumbDataUri(bytes);
+            }
+            catch { return null; }
+        }
+
+internal async Task<(bool ok, string json, string error)> FetchProfileAsync(string username)
+        {
+            try
+            {
+                var acc = FindMsAccountByName(username);
+                if (acc == null) return (false, null, "找不到正版账户");
+                acc = await EnsureMsTokenValidAsync(acc);
+                if (acc == null || string.IsNullOrEmpty(acc.McAccessToken))
+                    return (false, null, "登录已过期，请重新登录");
+
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                using var req = new HttpRequestMessage(HttpMethod.Get, "https://api.minecraftservices.com/minecraft/profile");
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", acc.McAccessToken);
+                req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+                req.Headers.TryAddWithoutValidation("Accept", "application/json");
+                var resp = await http.SendAsync(req);
+                var body = await resp.Content.ReadAsStringAsync();
+                if (!resp.IsSuccessStatusCode)
+                    return (false, null, $"HTTP {(int)resp.StatusCode}: {(body.Length > 200 ? body.Substring(0, 200) : body)}");
+                try
+                {
+                    File.AppendAllText(Path.Combine(Path.GetTempPath(), "illusionlauncher-cape.log"),
+                        $"[{DateTime.Now:HH:mm:ss}] profile: {(body.Length > 800 ? body.Substring(0, 800) : body)}\r\n");
+                }
+                catch { }
+                return (true, body, null);
+            }
+            catch (Exception ex) { return (false, null, "异常：" + ex.Message); }
+        }
+
+        /// <summary>切换披风；capeId 为空表示取消披风。</summary>
+        internal async Task<(bool ok, string error)> SetActiveCapeAsync(string username, string capeId)
+        {
+            try
+            {
+                var acc = FindMsAccountByName(username);
+                if (acc == null) return (false, "找不到正版账户");
+                acc = await EnsureMsTokenValidAsync(acc);
+                if (acc == null || string.IsNullOrEmpty(acc.McAccessToken))
+                    return (false, "登录已过期，请重新登录");
+
+                var isNone = string.IsNullOrWhiteSpace(capeId);
+                var attempts = new List<(HttpMethod method, string url, string json)>();
+                if (isNone)
+                {
+                    attempts.Add((HttpMethod.Delete, "https://api.minecraftservices.com/minecraft/profile/capes/active", null));
+                }
+                else
+                {
+                    // Mojang 没公开文档，不同版本路径不同，逐个试
+                    attempts.Add((HttpMethod.Put, "https://api.minecraftservices.com/minecraft/profile/capes/active/" + capeId, null));
+                    attempts.Add((HttpMethod.Put, "https://api.minecraftservices.com/minecraft/profile/capes/active", "{\"capeId\":\"" + capeId + "\"}"));
+                    attempts.Add((HttpMethod.Post, "https://api.minecraftservices.com/minecraft/profile/capes/active/" + capeId, null));
+                }
+
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                var lastErr = "未知错误";
+                foreach (var a in attempts)
+                {
+                    try
+                    {
+                        using var req = new HttpRequestMessage(a.method, a.url);
+                        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", acc.McAccessToken);
+                        req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+                        if (a.json != null)
+                            req.Content = new StringContent(a.json, Encoding.UTF8, "application/json");
+                        var resp = await http.SendAsync(req);
+                        var bodyText = await resp.Content.ReadAsStringAsync();
+                        if (resp.IsSuccessStatusCode)
+                            return (true, null);
+                        lastErr = $"HTTP {(int)resp.StatusCode} [{a.method} {a.url}] {(bodyText.Length > 120 ? bodyText.Substring(0, 120) : bodyText)}";
+                        if ((int)resp.StatusCode == 401 || (int)resp.StatusCode == 403)
+                            break;
+                    }
+                    catch (Exception ex) { lastErr = "异常：" + ex.Message; }
+                }
+                return (false, lastErr);
+            }
+            catch (Exception ex) { return (false, "异常：" + ex.Message); }
         }
 
         private async Task<bool> UploadSkinToMojangAsync(string username, string skinPngPath, string variant = "classic")

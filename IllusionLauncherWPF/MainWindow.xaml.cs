@@ -635,6 +635,8 @@ namespace IllusionLauncherWPF
 
             LoadGlobalConfig();
 
+            _ = LoadRemoteCfKeyAsync();
+
             // ⭐ Key 不再硬编码：只从 global.json 读取，存盘时自动 DPAPI 加密
             //    首次使用：打开 %APPDATA%\.illusionlauncher\global.json，
             //    把明文 Key 填进 "curseForgeApiKey"，启动一次即自动加密
@@ -698,14 +700,28 @@ namespace IllusionLauncherWPF
 
                 async Task<string> Fetch(string u)
                 {
+                    // 5 分钟缓存：共享 Key 额度有限，同样的搜索不重复打接口
+                    if (CfSearchCache.TryGetValue(u, out var cached) && (DateTime.Now - cached.At).TotalMinutes < 5)
+                        return cached.Json;
+
                     using var req = new HttpRequestMessage(HttpMethod.Get, u);
                     req.Headers.Add("x-api-key", cleanKey);
                     req.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
                     req.Headers.Add("Accept", "application/json");
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
                     var resp = await _http.SendAsync(req, cts.Token);
-                    if (!resp.IsSuccessStatusCode) throw new Exception($"CF API 返回 {(int)resp.StatusCode}");
-                    return await resp.Content.ReadAsStringAsync();
+
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        if ((int)resp.StatusCode == 429)
+                            throw new Exception("共享 Key 的请求额度已满，请稍后重试；也可以去 console.curseforge.com 免费申请自己的 Key 填进设置");
+                        throw new Exception($"CF API 返回 {(int)resp.StatusCode}");
+                    }
+
+                    var body = await resp.Content.ReadAsStringAsync();
+                    if (CfSearchCache.Count > 200) CfSearchCache.Clear();
+                    CfSearchCache[u] = (DateTime.Now, body);
+                    return body;
                 }
 
                 var json = await Fetch(BuildUrl(gameVersion));
@@ -1132,6 +1148,29 @@ namespace IllusionLauncherWPF
 
         /// <summary>配置文件按 camelCase 写盘，读取时必须忽略大小写，否则整个配置读不出来（Key/内存等全部丢失）。</summary>
         private static readonly JsonSerializerOptions CfgJsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        // 共用 CurseForge API Key：用户没自己填时使用（CurseForge 免费 key，社区共享模式）
+        private static readonly Dictionary<string, (DateTime At, string Json)> CfSearchCache = new Dictionary<string, (DateTime, string)>();
+
+        /// <summary>从 GitHub 拉取共享 Key（被封时只需改仓库里的 cfkey.txt，用户重启即生效）。</summary>
+        private async Task LoadRemoteCfKeyAsync()
+        {
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
+                var txt = (await http.GetStringAsync("https://gist.githubusercontent.com/MCillusion50/e1c9d696fa9cf1ffd780a3ae876c959a/raw/cfkey.txt")).Trim();
+                if (string.IsNullOrWhiteSpace(txt) || txt.Length < 20) return;
+
+                // 用户自己填过的 Key 优先，只有空的或用内置默认值时才换成远程
+                if (string.IsNullOrWhiteSpace(_global.CurseForgeApiKey))
+                {
+                    _global.CurseForgeApiKey = txt;
+                    try { SaveGlobalConfig(); } catch { }
+                    Debug.WriteLine("[CF] 已使用远程共享 Key");
+                }
+            }
+            catch (Exception ex) { Debug.WriteLine("[CF] 远程 Key 拉取失败：" + ex.Message); }
+        }
 
         private void LoadGlobalConfig()
         {
@@ -1738,6 +1777,14 @@ namespace IllusionLauncherWPF
                     {
                         var cfgJson = root.GetProperty("config").GetRawText();
                         var newCfg = JsonSerializer.Deserialize<GlobalConfig>(cfgJson, CfgJsonOptions);
+                        // 诊断：把前端传来的 Key 长度写进日志，便于定位收不到 Key 的问题
+                        try
+                        {
+                            File.AppendAllText(Path.Combine(Path.GetTempPath(), "illusionlauncher-config.log"),
+                                $"[{DateTime.Now:HH:mm:ss}] save: keyLen={(newCfg.CurseForgeApiKey == null ? -1 : newCfg.CurseForgeApiKey.Length)} maxMem={newCfg.MaxMemoryMB} rawLen={cfgJson.Length}\r\n");
+                        }
+                        catch { }
+
                         newCfg.JavaPath = _global.JavaPath;
                         newCfg.GamePath = _global.GamePath;
                         newCfg.BackgroundPath = _global.BackgroundPath;
@@ -1748,6 +1795,13 @@ namespace IllusionLauncherWPF
                         newCfg.CurseForgeApiKey = _global.CurseForgeApiKey;
                         _global = newCfg;
                         SaveGlobalConfig();
+
+                        // 回执：让前端能确认 Key 真的存进去了（否则用户完全不知道保存结果）
+                        var savedKeyLen = string.IsNullOrEmpty(_global.CurseForgeApiKey) ? 0 : _global.CurseForgeApiKey.Length;
+                        await RunOnUI(() =>
+                        {
+                            _ = core.ExecuteScriptAsync($"onConfigSaved({{\"keyLen\":{savedKeyLen}}}");
+                        });
 
                         // ... 下面原来的代码不变
 

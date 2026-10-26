@@ -17,8 +17,10 @@
 					.custom-select-display {
 					padding: 8px 12px;
 					color: #fff;
-					background: rgba(30, 30, 40, 0.95);
-					border: 1px solid rgba(255,255,255,0.18);
+					background: rgba(255, 255, 255, 0.16);
+					backdrop-filter: blur(12px) saturate(140%);
+					-webkit-backdrop-filter: blur(12px) saturate(140%);
+					border: 1px solid rgba(255,255,255,0.5);
 					border-radius: 10px;
 					display: flex;
 					justify-content: space-between;
@@ -28,7 +30,7 @@
 					}
 					.custom-dropdown:hover .custom-select-display {
 					border-color: rgba(255,255,255,0.4);
-					background: rgba(40, 40, 50, 0.95);
+					background: rgba(255, 255, 255, 0.26);
 					}
 					/* 列表容器：圆角、细描边、毛玻璃 */
 					.custom-select-options {
@@ -3186,5 +3188,233 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
 #skinAvatar img{
 	image-rendering: pixelated;
 	image-rendering: -webkit-optimize-contrast;
+	image-rendering: crisp-edges;
+}
+
+/* ===== 皮肤库新排版：左预览 / 右工具栏 + 三列网格 ===== */
+.skin-panel-inner{display:flex;gap:16px;height:100%;box-sizing:border-box;padding:18px;}
+.skin-preview-col{flex:0 0 38%;display:flex;flex-direction:column;gap:10px;min-width:0;}
+.skin-preview-col .skin-3d-viewer{flex:1;border-radius:22px;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.06);overflow:hidden;}
+.skin-meta{font-size:12px;opacity:.72;text-align:center;letter-spacing:.5px;}
+.skin-right-col{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0;}
+.skin-toolbar{display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-wrap:nowrap;}
+.skin-pill{height:38px;padding:0 20px;border-radius:19px;border:1px solid rgba(255,255,255,.6);
+	background:rgba(255,255,255,.10);color:#fff;font-family:inherit;font-size:14px;cursor:pointer;
+	transition:background .18s,transform .18s,box-shadow .18s;box-shadow:0 0 12px rgba(180,230,255,.15);}
+.skin-pill:hover{background:rgba(255,255,255,.20);box-shadow:0 0 18px rgba(180,230,255,.35);}
+.skin-pill:active{transform:scale(.96);}
+.skin-pill.active{background:rgba(255,255,255,.92);color:#0e0e16;font-weight:700;border-color:#fff;}
+.skin-pill-close{width:38px;padding:0;font-size:15px;}
+.skin-right-col .skin-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;
+	overflow-y:auto;overflow-x:hidden;align-content:start;flex:1;padding-right:4px;}
+.skin-list-card.active{border-color:rgba(255,255,255,.95)!important;box-shadow:0 0 18px rgba(180,230,255,.45);}
+.skin-btns .apply{background:rgba(255,255,255,.9)!important;color:#0e0e16!important;border:1px solid #fff!important;}
+.skin-btns .del{background:rgba(255,120,120,.18)!important;border:1px solid rgba(255,140,140,.6)!important;color:#ffd9d9!important;}
+.skin-empty{grid-column:1/-1;padding:24px 8px;text-align:center;font-size:13px;opacity:.7;}
+
+
+/* SKIN-LAYOUT-V2：压过旧的 .skin-panel .skin-list / .skin-3d-viewer 规则 */
+.skin-panel.show{padding:0;overflow:hidden;}
+.skin-panel .skin-panel-inner{display:flex;gap:16px;height:100%;box-sizing:border-box;padding:16px;}
+.skin-panel .skin-preview-col{flex:0 0 36%;display:flex;flex-direction:column;gap:10px;min-width:0;}
+.skin-panel .skin-preview-col .skin-3d-viewer{width:100%;height:auto;flex:1;min-height:0;border-radius:22px;
+	border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.06);}
+.skin-panel .skin-meta{font-size:12px;opacity:.72;text-align:center;letter-spacing:.5px;flex:0 0 auto;}
+.skin-panel .skin-right-col{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0;height:100%;}
+.skin-panel .skin-toolbar{display:flex;gap:10px;justify-content:flex-end;align-items:center;flex:0 0 auto;}
+.skin-panel .skin-right-col .skin-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;
+	max-height:none;height:auto;flex:1;min-height:0;overflow-y:auto;align-content:start;padding-right:4px;}
+.skin-panel .skin-pill{height:38px;padding:0 20px;border-radius:19px;border:1px solid rgba(255,255,255,.6);
+	background:rgba(255,255,255,.10);color:#fff;font-family:inherit;font-size:14px;cursor:pointer;
+	transition:background .18s,transform .18s,box-shadow .18s;box-shadow:0 0 12px rgba(180,230,255,.15);}
+.skin-panel .skin-pill:hover{background:rgba(255,255,255,.20);box-shadow:0 0 18px rgba(180,230,255,.35);}
+.skin-panel .skin-pill:active{transform:scale(.96);}
+.skin-panel .skin-pill.active{background:rgba(255,255,255,.92);color:#0e0e16;font-weight:700;border-color:#fff;}
+.skin-panel .skin-pill-close{width:38px;padding:0;font-size:15px;}
+.skin-panel .skin-empty{grid-column:1/-1;padding:24px 8px;text-align:center;font-size:13px;opacity:.7;}
+
+
+/* SKIN-BTN-V3：胶囊按钮 + 复用鼠标跟随边缘光 + 红色关闭 */
+.skin-panel .skin-pill,
+.skin-panel .skin-btns button,
+.skin-panel .skin-btns .apply,
+.skin-panel .skin-btns .del{
+	border-radius: 999px !important;
+	position: relative;
+	overflow: hidden;
+}
+.skin-panel .skin-pill::after,
+.skin-panel .skin-btns button::after{
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	padding: 1.5px;
+	background: radial-gradient(95px circle at var(--mx, 50%) var(--my, 50%),
+	            rgba(255,255,255,0.95),
+	            rgba(255,255,255,0.28) 45%,
+	            transparent 72%);
+	-webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+	-webkit-mask-composite: xor;
+	        mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+	        mask-composite: exclude;
+	opacity: 0;
+	transition: opacity .22s ease;
+	pointer-events: none;
+	z-index: 3;
+}
+.skin-panel .skin-pill:hover::after,
+.skin-panel .skin-btns button:hover::after{ opacity: 1; }
+
+/* 关闭按钮：红色 */
+.skin-panel .skin-pill-close{
+	color: #ff9090 !important;
+	border-color: rgba(255,120,120,.55) !important;
+	background: rgba(255,80,80,.10) !important;
+}
+.skin-panel .skin-pill-close:hover{
+	background: rgba(255,80,80,.24) !important;
+	box-shadow: 0 0 18px rgba(255,110,110,.5) !important;
+}
+
+/* 3D 画布随容器尺寸并居中 */
+.skin-panel .skin-3d-viewer{ display: flex; align-items: center; justify-content: center; }
+.skin-panel .skin-3d-viewer canvas{ display: block; border-radius: 18px; }
+
+
+/* SKIN-POLISH-V4：iOS 毛玻璃背景 + 统一厚字 + 半透明按钮 */
+.skin-panel .skin-preview-col .skin-3d-viewer{
+	background: rgba(255,255,255,.10) !important;
+	border: 1px solid rgba(255,255,255,.55) !important;
+	-webkit-backdrop-filter: blur(22px) saturate(150%);
+	backdrop-filter: blur(22px) saturate(150%);
+	box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 18px 40px rgba(0,0,0,.18);
+	overflow: hidden;
+}
+.skin-panel .skin-pill,
+.skin-panel .skin-btns button,
+.skin-panel .skin-btns .apply,
+.skin-panel .skin-btns .del{
+	font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif !important;
+	font-weight: 700 !important;
+	font-size: 14px !important;
+	letter-spacing: .3px;
+	background: rgba(255,255,255,.16) !important;
+	border: 1px solid rgba(255,255,255,.62) !important;
+	-webkit-backdrop-filter: blur(10px);
+	backdrop-filter: blur(10px);
+}
+.skin-panel .skin-pill:hover,
+.skin-panel .skin-btns button:hover{ background: rgba(255,255,255,.28) !important; }
+.skin-panel .skin-pill.active{
+	background: rgba(255,255,255,.90) !important;
+	color: #0e0e16 !important;
+	font-weight: 700 !important;
+}
+.skin-panel .skin-btns button{ font-size: 12.5px !important; padding: 0 14px; height: 28px; }
+.skin-panel .skin-btns .del{
+	color: #ffdada !important;
+	background: rgba(255,90,90,.20) !important;
+	border-color: rgba(255,130,130,.65) !important;
+}
+.skin-panel .skin-pill-close{
+	background: rgba(255,80,80,.16) !important;
+	border-color: rgba(255,120,120,.6) !important;
+	color: #ff9a9a !important;
+	display: inline-flex; align-items: center; justify-content: center;
+}
+.skin-panel .skin-pill-close svg{ display: block; }
+
+
+/* SKIN-SWITCH-V5：左右胶囊滑块 + 披风使用按钮 */
+.skin-panel .skin-switch{
+	display: flex;
+	width: 100%;
+	height: 26px;
+	border-radius: 999px;
+	overflow: hidden;
+	border: 1px solid rgba(255,255,255,.45);
+	background: rgba(255,255,255,.06);
+}
+.skin-panel .skin-switch button{
+	flex: 1;
+	border: none;
+	background: transparent;
+	font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+	font-weight: 700;
+	font-size: 12px;
+	letter-spacing: .3px;
+	cursor: pointer;
+	transition: background .18s ease, color .18s ease;
+}
+.skin-panel .skin-switch .sw-apply{ background: rgba(255,255,255,.88); color: #0e0e16; }
+.skin-panel .skin-switch .sw-apply:hover{ background: #fff; }
+.skin-panel .skin-switch .sw-del{ background: rgba(255,80,80,.32); color: #ffdcdc; }
+.skin-panel .skin-switch .sw-del:hover{ background: rgba(255,60,60,.5); color: #fff; }
+
+/* 当前使用中的皮肤：滑块外圈亮白 + 光晕 */
+.skin-panel .skin-list-card.active .skin-switch{
+	border-color: rgba(255,255,255,.9);
+	box-shadow: 0 0 14px rgba(180,230,255,.45);
+}
+
+/* 披风卡片的使用按钮（胶囊） */
+.skin-panel .cape-use{
+	width: 100%;
+	height: 26px;
+	margin-top: 6px;
+	border-radius: 999px;
+	border: 1px solid rgba(255,255,255,.55);
+	background: rgba(255,255,255,.16);
+	color: #fff;
+	font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+	font-weight: 700;
+	font-size: 12px;
+	cursor: pointer;
+	transition: background .18s ease;
+}
+.skin-panel .cape-use:hover{ background: rgba(255,255,255,.3); }
+.skin-panel .cape-use.on{
+	background: rgba(255,255,255,.9);
+	color: #0e0e16;
+	border-color: #fff;
+}
+
+
+/* CAPE-THUMB-V6：从 64x32 披风纹理里裁出本体 (1,1) 10x16，放大 6 倍显示为长方形 */
+.skin-panel .cape-thumb{
+	width: 80px;
+	height: 128px;
+	margin: 2px auto 8px;
+	background-repeat: no-repeat;
+	background-size: 512px 256px;      /* 64*6 x 32*6 */
+	background-position: -8px -8px;    /* (1,1) * 6 */
+	image-rendering: pixelated;
+	image-rendering: -webkit-optimize-contrast;
+	border-radius: 6px;
+	box-shadow: 0 6px 16px rgba(0,0,0,.22);
+}
+/* 披风卡片整体加高，保证 2 行能放下 */
+.skin-panel .cape-grid .skin-list-card{
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	padding: 10px 8px 8px;
+}
+
+
+/* CAPE-THUMB-V7：用 img 做像素级裁剪（background-image 的 pixelated 在 WebView2 不生效） */
+.skin-panel .cape-thumb-wrap{
+	width: 80px; height: 128px;
+	overflow: hidden;
+	margin: 0 auto 8px;
+	border-radius: 6px;
+}
+.skin-panel .cape-thumb-img{
+	width: 512px; height: 256px;
+	margin: -8px 0 0 -8px;
+	max-width: none;
+	image-rendering: pixelated;
 	image-rendering: crisp-edges;
 }

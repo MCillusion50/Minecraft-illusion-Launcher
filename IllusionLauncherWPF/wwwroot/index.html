@@ -290,16 +290,25 @@
 						
 
 							<div class="skin-panel" id="skinPanel">
-								<div class="panel-header">
-									<span class="panel-title">皮肤库</span>
-									<button class="panel-close" onclick="toggleSkinPanel()">收起 ✕</button>
-								</div>
-								<button class="small-btn" onclick="importSkin()" style="background:rgba(59,130,246,0.92); border-color:rgba(59,130,246,0.92);">导入皮肤 PNG</button>
-								<div class="skin-panel-body">
-									<div class="skin-3d-viewer">
-										<canvas id="skinCanvas"></canvas>
+								<div class="skin-panel-inner">
+									<!-- 左：模型预览 -->
+									<div class="skin-preview-col">
+										<div class="skin-3d-viewer">
+											<canvas id="skinCanvas"></canvas>
+										</div>
 									</div>
-									<div class="skin-list" id="skinLibraryGrid"></div>
+
+									<!-- 右：工具栏 + 网格 -->
+									<div class="skin-right-col">
+										<div class="skin-toolbar">
+											<button class="skin-pill" id="skinImportBtn" onclick="importSkin()">导入</button>
+											<button class="skin-pill active" id="tabSkin" onclick="switchSkinTab('skin')">皮肤</button>
+											<button class="skin-pill" id="tabCape" onclick="switchSkinTab('cape')">披风</button>
+											<button class="skin-pill skin-pill-close" onclick="toggleSkinPanel()" aria-label="关闭"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+										</div>
+										<div class="skin-list" id="skinLibraryGrid"></div>
+										<div class="skin-list" id="capeGrid" style="display:none;"></div>
+									</div>
 								</div>
 							</div>
 
@@ -2393,7 +2402,151 @@ function triggerMemRipple(btnEl) {
 				window.dispatchEvent(new Event('glassRelayout'));
 			}
 
-			function toggleSkinPanel() {
+			function fitSkinViewer() {
+	// 画布原来写死 240x300，导致模型贴在左上角；这里让它铺满左侧预览区
+	try {
+		if (typeof skinViewer === 'undefined' || !skinViewer) return;
+		const box = document.querySelector('.skin-panel .skin-3d-viewer');
+		if (!box) return;
+		const w = Math.max(80, box.clientWidth - 8);
+		const hgt = Math.max(120, box.clientHeight - 8);
+		const canvas = document.getElementById('skinCanvas');
+		if (canvas) {
+			canvas.style.width = w + 'px';
+			canvas.style.height = hgt + 'px';
+		}
+		if (typeof skinViewer.setSize === 'function') skinViewer.setSize(w, hgt);
+		if (skinViewer.zoom !== undefined) skinViewer.zoom = 0.72;
+	} catch (e) { }
+}
+
+(function () {
+	const panel = document.getElementById('skinPanel');
+	if (!panel) return;
+	new MutationObserver(function () {
+		if (panel.classList.contains('show')) setTimeout(fitSkinViewer, 120);
+	}).observe(panel, { attributes: true, attributeFilter: ['class'] });
+	// 容器尺寸变化时重新适配（面板滑入动画期间 clientWidth 可能是 0）
+	if (typeof ResizeObserver !== 'undefined') {
+		var __box3d = document.querySelector('.skin-panel .skin-3d-viewer');
+		if (__box3d) new ResizeObserver(function () { fitSkinViewer(); }).observe(__box3d);
+	}
+		window.addEventListener('resize', function () {
+		if (panel.classList.contains('show')) setTimeout(fitSkinViewer, 60);
+	});
+})();
+
+function syncSkinPanelToAccount() {
+	// 高度严格跟随账户卡片，避免面板比卡片高出一截
+	const acc = document.querySelector('.account-panel');
+	const panel = document.getElementById('skinPanel');
+	if (!acc || !panel) return;
+	const rect = acc.getBoundingClientRect();
+	if (rect.height > 100) panel.style.height = Math.round(rect.height) + 'px';
+}
+
+(function () {
+	const panel = document.getElementById('skinPanel');
+	if (!panel) return;
+	new MutationObserver(function () {
+		if (panel.classList.contains('show')) setTimeout(syncSkinPanelToAccount, 30);
+	}).observe(panel, { attributes: true, attributeFilter: ['class'] });
+	// 容器尺寸变化时重新适配（面板滑入动画期间 clientWidth 可能是 0）
+	if (typeof ResizeObserver !== 'undefined') {
+		var __box3d = document.querySelector('.skin-panel .skin-3d-viewer');
+		if (__box3d) new ResizeObserver(function () { fitSkinViewer(); }).observe(__box3d);
+	}
+		window.addEventListener('resize', function () {
+		if (panel.classList.contains('show')) syncSkinPanelToAccount();
+	});
+})();
+
+function switchSkinTab(tab) {
+	const isSkin = (tab === 'skin');
+	const gSkin = document.getElementById('skinLibraryGrid');
+	const gCape = document.getElementById('capeGrid');
+	const bSkin = document.getElementById('tabSkin');
+	const bCape = document.getElementById('tabCape');
+	const imp = document.getElementById('skinImportBtn');
+	if (gSkin) gSkin.style.display = isSkin ? '' : 'none';
+	if (gCape) gCape.style.display = isSkin ? 'none' : '';
+	if (bSkin) bSkin.classList.toggle('active', isSkin);
+	if (bCape) bCape.classList.toggle('active', !isSkin);
+	if (imp) imp.style.display = '';
+	if (!isSkin) loadCapes();
+}
+
+function loadCapes(force) {
+	const grid = document.getElementById('capeGrid');
+	if (!grid) return;
+	if (!force && grid.dataset.loaded === '1' && (Date.now() - Number(grid.dataset.ts || 0)) < 60000) return;
+
+	grid.innerHTML = '<div class="skin-empty">正在获取披风…</div>';
+	const _acc = (currentAccount !== null && accounts[currentAccount]) ? accounts[currentAccount].name : '';
+	if (!_acc) { grid.innerHTML = '<div class="skin-empty">请先登录正版账号</div>'; return; }
+	post({ action: 'get_capes', username: _acc });
+	setTimeout(function () {
+		if (grid.dataset.loaded !== '1' && grid.innerHTML.indexOf('正在获取') >= 0) {
+			grid.innerHTML = '<div class="skin-empty">获取超时，请重新登录正版账号后再试</div>';
+		}
+	}, 20000);
+}
+
+window.onCapesLoaded = function (data) {
+	const grid = document.getElementById('capeGrid');
+	if (!grid) return;
+	if (!data || data.ok === false) {
+		grid.innerHTML = '<div class="skin-empty">' + ((data && data.error) || '获取披风失败') + '</div>';
+		return;
+	}
+	grid.dataset.loaded = '1';
+	grid.dataset.ts = String(Date.now());
+	const list = data.capes || [];
+	if (!list.length) {
+		grid.innerHTML = '<div class="skin-empty">这个账号没有披风</div>';
+		return;
+	}
+	grid.innerHTML = '';
+	list.forEach(function (c) {
+		const card = document.createElement('div');
+		card.className = 'skin-list-card' + (c.state === 'ACTIVE' ? ' active' : '');
+		const img = document.createElement('img');
+											img.src = c.thumb ? c.thumb : c.url;
+											img.style.cssText = 'display:block;width:80px;height:128px;margin:0 auto 8px;border-radius:6px;object-fit:contain;image-rendering:pixelated;';
+											img.title = c.alias || '';
+											card.appendChild(img);
+		const nm = document.createElement('div');
+		nm.style.cssText = 'text-align:center;font-size:13px;font-weight:700;color:#fff;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+		nm.textContent = c.alias || '披风';
+		card.appendChild(nm);
+
+	const useBtn = document.createElement('button');
+	useBtn.className = 'cape-use' + (c.state === 'ACTIVE' ? ' on' : '');
+	useBtn.textContent = (c.state === 'ACTIVE') ? '使用中' : '使用';
+	useBtn.onclick = function (ev) {
+		ev.stopPropagation();
+		post({ action: 'set_cape', username: ((currentAccount !== null && accounts[currentAccount]) ? accounts[currentAccount].name : ''), capeId: (c.state === 'ACTIVE' ? '' : c.id) });
+	};
+	card.appendChild(useBtn);
+		card.title = c.alias || '';
+		card.onclick = function () {
+			post({ action: 'set_cape', username: ((currentAccount !== null && accounts[currentAccount]) ? accounts[currentAccount].name : ''), capeId: (c.state === 'ACTIVE' ? '' : c.id) });
+		};
+		grid.appendChild(card);
+	});
+};
+
+window.onCapeSet = function (data) {
+	if (data && data.ok) showSideToast('披风已切换', '重新进入游戏即可看到新披风', 100);
+	else showSideToast('切换失败', (data && data.error) ? data.error : '未知错误', 100);
+	if (window._toastHideTimer) clearTimeout(window._toastHideTimer);
+	window._toastHideTimer = setTimeout(hideSideToast, 5000);
+	const grid = document.getElementById('capeGrid');
+	if (grid) grid.dataset.loaded = '';
+	loadCapes();
+};
+
+function toggleSkinPanel() {
 			if (javaConfigPanelOpen) toggleJavaConfigPanel();
 				skinPanelOpen = !skinPanelOpen;
 				const panel = document.getElementById('skinPanel');
@@ -3069,7 +3222,18 @@ window.versionLoaderMap = data.loaderMap || {};
 										}
 
 										// ============ 全局配置 ============
-										window.onGlobalConfigLoaded = function(data) {
+										window.onConfigSaved = function (data) {
+	var len = (data && data.keyLen) ? data.keyLen : 0;
+	showSideToast(
+		'设置已保存',
+		len > 0 ? ('CurseForge Key 已保存（' + len + ' 字符）') : '未填写 CurseForge Key，CF 搜索将不可用',
+		100
+	);
+	if (window._toastHideTimer) clearTimeout(window._toastHideTimer);
+	window._toastHideTimer = setTimeout(hideSideToast, 5000);
+};
+
+window.onGlobalConfigLoaded = function(data) {
 										const c = data || {};
 										window._currentJavaPath = c.javaPath || '';
 										// ⭐ 自动内存：字段缺失视为 true（老配置默认自动）
@@ -3351,7 +3515,7 @@ function saveGlobalConfig() {
 
 										// edge-light-binding：鼠标跟随的边缘高光（iOS 26 陀螺仪边缘光的鼠标版）
 (function () {
-  var SEL = ".small-btn, .ver-download-btn, .cta-btn, .primary-btn, .loader-card, .dl-loader-card, .launch-btn-main";
+  var SEL = ".small-btn, .ver-download-btn, .cta-btn, .primary-btn, .loader-card, .dl-loader-card, .launch-btn-main, .skin-pill, .skin-btns button";
   window.addEventListener("mousemove", function (e) {
     var el = e.target && e.target.closest ? e.target.closest(SEL) : null;
     if (!el) return;
@@ -5068,10 +5232,10 @@ window.onJavaDetected = function(data) {
 										<div class="skin-list-card ${currentSkinId === s.id ? 'active' : ''}" data-skin-id="${s.id}" onclick="previewSkin('${s.id}')">
 											<img src="https://skins.local/${escapeHtml(s.fileName)}" onerror="this.src='${STEVE_AVATAR}'" alt="${escapeHtml(s.name)}">
 												<div class="skin-name">${escapeHtml(s.name)}</div>
-												<div class="skin-btns">
-													<button class="apply" onclick="event.stopPropagation(); applySkin('${s.id}')">应用</button>
-													<button class="del" onclick="event.stopPropagation(); deleteSkin('${s.id}')">删</button>
-												</div>
+												<div class="skin-switch">
+												<button class="sw-apply" onclick="event.stopPropagation(); applySkin('${s.id}')">应用</button>
+												<button class="sw-del" onclick="event.stopPropagation(); deleteSkin('${s.id}')">删除</button>
+											</div>
 											</div>`).join('');
 										if (data.length && !currentSkinId) previewSkin(data[0].id);
 											setTimeout(() => {
