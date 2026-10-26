@@ -5399,8 +5399,17 @@ window.onJavaDetected = function(data) {
 											avatarEl.style.opacity = '1';
 											})
 											.catch(() => {
-											avatarEl.src = getSkinUrl(acc.name);
-											avatarEl.style.opacity = '1';
+											if (acc.type === 'microsoft' && acc.uuid) {
+												avatarEl.setAttribute('data-avatar-uuid', acc.uuid);
+												const _cachedAva = _avatarCache[acc.uuid];
+												avatarEl.src = _cachedAva ? _cachedAva : getSkinUrl(acc.name);
+												avatarEl.style.opacity = '1';
+												if (!_cachedAva) fetchAvatar(acc.uuid);
+											} else {
+												avatarEl.removeAttribute('data-avatar-uuid');
+												avatarEl.src = getSkinUrl(acc.name);
+												avatarEl.style.opacity = '1';
+											}
 											});
 											return;
 											}

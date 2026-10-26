@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <Version>0.1.4</Version>
+    <Version>0.1.5</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -25,7 +25,7 @@
       </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Qomicex.Connector\Qomicex.Connector.csproj" />
+    <ProjectReference Include="..\Qomicex.Connector\Qomicex.Connector.csproj" />
   </ItemGroup>
 
   <ItemGroup>
