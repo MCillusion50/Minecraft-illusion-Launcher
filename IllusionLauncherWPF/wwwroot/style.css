@@ -3214,7 +3214,7 @@ body.theme-dark .top-tab.active, body.theme-dark .sub-tab.active {
 
 
 /* SKIN-LAYOUT-V2：压过旧的 .skin-panel .skin-list / .skin-3d-viewer 规则 */
-.skin-panel.show{padding:0;overflow:hidden;}
+#skinPanel.show{padding:0;overflow:hidden;}   /* 只作用于皮肤面板，别影响账户管理/微软登录 */
 .skin-panel .skin-panel-inner{display:flex;gap:16px;height:100%;box-sizing:border-box;padding:16px;}
 .skin-panel .skin-preview-col{flex:0 0 36%;display:flex;flex-direction:column;gap:10px;min-width:0;}
 .skin-panel .skin-preview-col .skin-3d-viewer{width:100%;height:auto;flex:1;min-height:0;border-radius:22px;

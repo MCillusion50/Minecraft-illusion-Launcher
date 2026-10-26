@@ -113,25 +113,19 @@ namespace IllusionLauncherWPF
                         try
                         {
                             if (File.Exists(s)) return;
-                            string bmclUrl = ReplaceToMirror(u);
-                            // ⭐ 官方源优先，失败再走镜像；每个源各重试 3 次
-                            bool _done = false;
-                            for (int _a = 0; _a < 3 && !_done; _a++)
+                            // maven.neoforged.net / maven.minecraftforge.net 在国内基本不可达，直接走镜像链
+                            var _done = false;
+                            foreach (var _cand in BuildMirrorCandidates(u))
                             {
-                                try { await DownloadFileAsync(u, s, null, h); _done = true; }
-                                catch (OperationCanceledException) { throw; }
-                                catch { }
-                            }
-                            if (!_done && bmclUrl != u)
-                            {
-                                for (int _a = 0; _a < 3 && !_done; _a++)
+                                if (_done) break;
+                                for (int _a = 0; _a < 2 && !_done; _a++)
                                 {
-                                    try { await DownloadFileAsync(bmclUrl, s, null, h); _done = true; }
+                                    try { await DownloadFileAsync(_cand, s, null, h); _done = true; }
                                     catch (OperationCanceledException) { throw; }
                                     catch { }
                                 }
                             }
-                            if (!_done) throw new Exception("官方源与镜像均下载失败");
+                            if (!_done) throw new Exception($"所有下载源均失败：{u}");
                         }
                         catch (Exception ex) { Debug.WriteLine($"[ForgeDL] {n} 失败：{ex.Message}"); }
                         finally
@@ -312,7 +306,35 @@ namespace IllusionLauncherWPF
             catch { }
         }
 
-        private string ReplaceToMirror(string url)
+                /// <summary>
+        /// 返回可尝试的下载地址：镜像排前面（官方源在国内被墙），官方地址作为最后兜底。
+        /// </summary>
+        private static List<string> BuildMirrorCandidates(string url)
+        {
+            var prefixes = new[]
+            {
+                "https://maven.neoforged.net/releases/",
+                "https://maven.minecraftforge.net/"
+            };
+
+            foreach (var prefix in prefixes)
+            {
+                if (!url.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                var rel = url.Substring(prefix.Length);
+                return new List<string>
+                {
+                    "https://bmclapi2.bangbang93.com/maven/" + rel,
+                    "https://maven.aliyun.com/repository/public/" + rel,
+                    "https://repo.huaweicloud.com/repository/maven/" + rel,
+                    "https://mirrors.cloud.tencent.com/nexus/repository/maven-public/" + rel,
+                    url
+                };
+            }
+
+            return new List<string> { url };
+        }
+
+private string ReplaceToMirror(string url)
         {
             if (url.Contains("maven.neoforged.net/releases/"))
                 return url.Replace("maven.neoforged.net/releases/", "bmclapi2.bangbang93.com/maven/");
