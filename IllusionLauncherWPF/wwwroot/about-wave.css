@@ -1,0 +1,47 @@
+/* 自动生成：从老 UI style.css 抽取的海浪效果，选择器改写到 #waveLayer 作用域 */
+#waveLayer {
+  position: fixed;
+  overflow: hidden;
+  pointer-events: none;
+  display: none;
+  z-index: 3;
+}
+#waveLayer.on { display: block; }
+#waveLayer {
+					position: absolute;
+					bottom: 0;
+					left: 0;
+					width: 100%;
+					height: 160px;
+					overflow: hidden;
+					pointer-events: none;
+					z-index: 1;
+					/* 让波浪顶部自然融入背景，不会有一刀切的边缘 */
+					-webkit-mask-image: linear-gradient(to top, black 30%, transparent 100%);
+					mask-image: linear-gradient(to top, black 30%, transparent 100%);
+					}
+#waveLayer .wave {
+					position: absolute;
+					bottom: 0;
+					left: 0;
+					width: 200%;
+					height: 100%;
+					/* 核心：使用不闭合的 SVG 路径，只画描边（stroke），不填充（fill） */
+					background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 200' preserveAspectRatio='none'%3E%3Cpath d='M 0,120 C 200,160 400,60 600,120 C 800,180 1000,80 1200,120' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='3.2'/%3E%3Cpath d='M 0,140 C 200,100 400,180 600,140 C 800,100 1000,180 1200,140' fill='none' stroke='rgba(255,255,255,0.15)' stroke-width='2.4'/%3E%3Cpath d='M 0,160 C 200,190 400,110 600,160 C 800,210 1000,130 1200,160' fill='none' stroke='rgba(255,255,255,0.05)' stroke-width='4.8'/%3E%3C/svg%3E");
+					background-size: 50% 100%;
+					background-repeat: repeat-x;
+					/* 加入轻微的发光效果，模拟水波反光 */
+					filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.2));
+					animation: wave-move 12s linear infinite, wave-bob 5s ease-in-out infinite alternate;
+					}
+#waveLayer .wave2 {
+					bottom: 10px; /* 稍微抬高一点 */
+					opacity: 0.6;
+					background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 200' preserveAspectRatio='none'%3E%3Cpath d='M 0,100 C 200,50 400,150 600,100 C 800,50 1000,150 1200,100' fill='none' stroke='rgba(255,255,255,0.3)' stroke-width='4'/%3E%3C/svg%3E");
+					animation: wave-move 18s linear infinite reverse, wave-bob 7s ease-in-out infinite alternate-reverse;
+					filter: blur(1px) drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
+					}
+@keyframes wave-move {
+					0% { transform: translateX(0); }
+					100% { transform: translateX(-50%); }
+					}

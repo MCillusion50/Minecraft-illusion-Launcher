@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Illusion Launcher</title>
+<style>
+  /* 窗口轮廓由 C# 的 SetWindowRgn 切成 squircle，内容层全出血，
+     这样圆角处不会露出窗口背景色。圆角够大时不需要额外描边。 */
+  :root { --win-r: 8px; --ui-lift: 0px; }
+  /* 注意：不要给 #iconLayer / #svgLayer / #avatarWrap 之类的叠层加 translate/transform，
+     那些层的子元素是 position:fixed，加了会让它们失去窗口坐标基准（图标全消失）。
+     下沉回弹只作用于引擎 canvas 里的元素。 */
+  html, body { margin: 0; padding: 0; overflow: hidden; background: transparent; border-radius: var(--win-r); }
+  #c { display: block; width: 100vw; height: 100vh; touch-action: none; border-radius: var(--win-r); }
+  #avatarWrap {
+    position: fixed;
+    pointer-events: none;
+    border-radius: 26px;
+    overflow: hidden;
+    background: transparent;
+  }
+  #avatarImg { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+
+  #svgLayer svg {
+    position: fixed;
+    pointer-events: none;
+    transition: transform 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
+  }
+
+  .glass-input {
+    position: fixed;
+    display: none;
+    background: transparent;
+    border: none;
+    outline: none;
+    text-align: center;
+    color: rgba(255,255,255,0.95);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    caret-color: #2b7fff;
+  }
+  .glass-input::placeholder { color: rgba(255,255,255,0.45); font-weight: 500; letter-spacing: 0; }
+
+  /* 回老 UI 的入口：低调地待在左下角 */
+  #backOld {
+    position: fixed;
+    left: 10px;
+    bottom: 8px;
+    z-index: 9999;
+    padding: 4px 10px;
+    border-radius: 10px;
+    border: none;
+    background: rgba(0, 0, 0, 0.22);
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 11px;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  body:hover #backOld { opacity: 1; }
+  #backOld:hover { background: rgba(0, 0, 0, 0.45); color: #fff; }
+</style>
+<link rel="stylesheet" href="about-wave.css?v=20261104_r222">
+<style>
+  /* ---- 关于页 HTML 叠层（图片/浪线/提示） ---- */
+  #aboutLayer { position: fixed; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 4; display: none; }
+  #aboutLayer.on { display: block; }
+  #aboutLayer img { position: absolute; pointer-events: auto; transition: none; }
+  #aboutLayer img.is-logo { object-fit: contain; padding: 0; box-sizing: border-box; transform: scale(1.06); }
+  #aboutLayer .thanks-circle { border-radius: 999px; }
+  #ab-ring {
+    display: none; /* 旧 CSS 版环，保留作回退；现在用 ring-glass.js 的真玻璃 shader */
+  }
+  #ab-ring-gl {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    display: none; /* r179: 按要求剔除关于页 logo 环（CSS 环与 GL 环都隐藏）。想恢复：把这里改回 block，并把下方 #ab-ring 改回 none */
+  }
+  #ab-ring {
+    position: absolute; left: 0; top: 0; width: 138px; height: 138px;
+    border-radius: 50%;
+    pointer-events: none;
+    /* ———— 液态玻璃圆环，三个参数单独调 ————
+       --ring-blur   背景模糊（越大越“厚”/越浑浊）
+       --ring-hole   中空半径（越大环越细）
+       --ring-tint   表面白色着色（越大越白） */
+    --ring-blur: 12px;
+    --ring-hole: 50%;
+    --ring-tint: 0.17;
+    background: rgba(255, 255, 255, var(--ring-tint));
+    -webkit-backdrop-filter: blur(var(--ring-blur)) saturate(1.65) brightness(1.06);
+    backdrop-filter: blur(var(--ring-blur)) saturate(1.65) brightness(1.06);
+    -webkit-mask: radial-gradient(circle at 50% 50%, transparent calc(var(--ring-hole) - 1%), #000 var(--ring-hole));
+    mask: radial-gradient(circle at 50% 50%, transparent calc(var(--ring-hole) - 1%), #000 var(--ring-hole));
+    box-shadow:
+      inset 0 3px 3px rgba(255, 255, 255, .95),
+      inset 0 -4px 9px rgba(255, 255, 255, .45),
+      inset 0 0 0 1.5px rgba(255, 255, 255, .58),
+      inset 0 0 14px rgba(255, 255, 255, .18),
+      0 14px 32px rgba(0, 0, 0, .34);
+  }
+  #ab-hero-outline {
+    position: absolute; pointer-events: none;
+    border: 1px solid rgba(255, 255, 255, .26);
+    border-radius: 28px;
+    box-sizing: border-box;
+  }
+  /* ———— 最终版：纯白环 + 阴影（覆盖上面所有 #ab-ring 属性） ———— */
+  #ab-ring {
+    display: none;
+    position: absolute;
+    width: 138px; height: 138px;
+    border-radius: 50%;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255,255,255,.60) 0%, rgba(255,255,255,.52) 48%, rgba(214,214,226,.50) 100%);
+    -webkit-backdrop-filter: blur(8px) saturate(1.25);
+    backdrop-filter: blur(8px) saturate(1.25);
+    box-shadow: none;
+    -webkit-mask: radial-gradient(circle at 50% 50%, transparent 0 43px, #000 44px);
+    mask: radial-gradient(circle at 50% 50%, transparent 0 43px, #000 44px);
+    filter: drop-shadow(0 12px 26px rgba(0, 0, 0, .34)) drop-shadow(0 3px 6px rgba(0, 0, 0, .22));
+  }
+  #ab-th-clip {
+    position: absolute; overflow: hidden; pointer-events: none;
+  }
+  #ab-th-clip img { position: absolute; pointer-events: auto; }
+  #vsetDropGlow {
+    position: fixed; display: none; pointer-events: none; z-index: 26;
+    border-radius: 24px;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.85), 0 0 28px 6px rgba(255,255,255,0.55), inset 0 0 24px rgba(255,255,255,0.22);
+    background: rgba(255,255,255,0.06);
+    transition: opacity .15s ease;
+  }
+  #vsetSpin {
+    position: fixed; width: 30px; height: 30px; display: none;
+    pointer-events: none; z-index: 25;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.18);
+    border-top-color: rgba(255, 255, 255, 0.9);
+    animation: vsetSpinRotate 0.9s linear infinite;
+  }
+  @keyframes vsetSpinRotate {
+    to { transform: rotate(360deg); }
+  }
+  #aboutTip {
+    position: fixed; padding: 7px 14px; border-radius: 999px;
+    background: rgba(20, 20, 24, .68); color: #fff;
+    font: 600 12px/1.3 -apple-system, "Microsoft YaHei", sans-serif;
+    white-space: nowrap; opacity: 0; pointer-events: none; z-index: 30;
+    transition: opacity .14s ease;
+    -webkit-backdrop-filter: blur(14px) saturate(1.6);
+    backdrop-filter: blur(14px) saturate(1.6);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, .28), inset 0 0.5px 0 rgba(255, 255, 255, .18);
+    transform: translateZ(0);
+  }
+
+  /* ===== Siri 光环：清理内存时屏幕边缘泛彩光 ===== */
+  @property --s1 { syntax: '<percentage>'; inherits: true; initial-value: 2%; }
+  @property --s2 { syntax: '<percentage>'; inherits: true; initial-value: 20%; }
+  @property --s3 { syntax: '<percentage>'; inherits: true; initial-value: 38%; }
+  @property --s4 { syntax: '<percentage>'; inherits: true; initial-value: 56%; }
+  @property --s5 { syntax: '<percentage>'; inherits: true; initial-value: 74%; }
+  @property --s6 { syntax: '<percentage>'; inherits: true; initial-value: 92%; }
+  #siriAura {
+    position: fixed; inset: 0; border-radius: var(--win-r); overflow: hidden;
+    pointer-events: none; z-index: 95;
+    opacity: 0; will-change: opacity;
+    filter: url(#siriLiquid);
+    --s1: 2%; --s2: 20%; --s3: 38%; --s4: 56%; --s5: 74%; --s6: 92%;
+    transition: opacity .40s ease,
+      --s1 1s ease-in-out, --s2 1s ease-in-out, --s3 1s ease-in-out,
+      --s4 1s ease-in-out, --s5 1s ease-in-out, --s6 1s ease-in-out;
+  }
+  #siriAura.on { opacity: 1; }
+  /* 彩色锥形渐变，只保留边缘一圈 */
+  /* 4 层同色描边：宽 6/9/11/15px，模糊 0/4/12/15（原版参数 1:1）
+     外层负责 blur，内层负责描边遮罩 —— CSS 的 mask 在 filter 之后应用，
+     反过来套会让光晕被遮罩切掉、不外渗 */
+  #siriAura .sl { position: absolute; inset: 0; filter: blur(var(--b)); }
+  #siriAura .sl i {
+    position: absolute; inset: 0; display: block; border-radius: var(--win-r);
+    border: var(--w) solid transparent;
+    background: conic-gradient(from 0deg,
+      #BC82F3 var(--s1),
+      #F5B9EA var(--s2),
+      rgba(255,255,255,.92) calc(var(--s2) + 4%),
+      rgba(255,255,255,.55) calc(var(--s2) + 9%),
+      #8D9FFF var(--s3),
+      #FF6778 var(--s4),
+      rgba(255,255,255,.85) calc(var(--s4) + 5%),
+      #FFBA71 var(--s5),
+      #C686FF var(--s6),
+      #BC82F3 100%) border-box;
+    -webkit-mask: linear-gradient(#000, #000) padding-box, linear-gradient(#000, #000) border-box;
+    -webkit-mask-composite: xor;
+            mask: linear-gradient(#000, #000) padding-box, linear-gradient(#000, #000) border-box;
+            mask-composite: exclude;
+  }
+  /* 内侧白色呼吸光 */
+  #siriAura::after {
+    content: ""; position: absolute; inset: 0; border-radius: var(--win-r);
+    box-shadow:
+      inset 0 0 2px 0 rgba(255,255,255,.95),
+      inset 0 0 16px 2px rgba(255,255,255,.42),
+      inset 0 0 54px 8px rgba(185,210,255,.20);
+    animation: siriBreath 1.45s ease-in-out infinite;
+  }
+  /* 从火箭位置炸开的脉冲 */
+  #siriBurst {
+    position: fixed; width: 84px; height: 84px; margin: -42px 0 0 -42px;
+    border-radius: 50%; display: none; pointer-events: none; z-index: 96;
+    background: radial-gradient(circle,
+      rgba(255,255,255,.96) 0%,
+      rgba(210,190,255,.60) 34%,
+      rgba(120,205,255,.30) 56%,
+      rgba(120,205,255,0) 72%);
+    opacity: 0; transform: scale(.22);
+    will-change: transform, opacity;
+  }
+  #siriBurst.go { animation: siriBurstOut .80s cubic-bezier(.20,.90,.28,1) forwards; }
+  @keyframes siriSpin { to { transform: rotate(360deg); } }
+  @keyframes siriBreath {
+    0%, 100% { opacity: .50; }
+    50%      { opacity: 1; }
+  }
+  @keyframes siriBurstOut {
+    0%   { opacity: .92; transform: scale(.22); }
+    45%  { opacity: .50; }
+    100% { opacity: 0;   transform: scale(3.6); }
+  }
+
+  /* ==== 资源大厅搜索框（叠在引擎画的胶囊里）==== */
+  #rhSearchInput {
+    position: fixed; display: none; z-index: 93;
+    background: transparent; border: 0; outline: 0; padding: 0 4px;
+    color: #fff; caret-color: #7fc4ff;
+    font: 600 13px/1 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  #rhSearchInput::placeholder { color: rgba(255,255,255,.55); font-weight: 500; }
+
+  /* ===== Siri 玻璃球（清理内存时出现）===== */
+  #siriOrb {
+    position: fixed; left: 50%; top: 50%; width: 312px; height: 120px;
+    pointer-events: none; z-index: 97;
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(var(--orb-hide, -260px)) scale(.88);
+    transform-origin: 50% 50%;
+    transition: opacity .26s ease, transform .60s cubic-bezier(.18, 1.28, .30, 1);
+  }
+  #siriOrb.on {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0) scale(1);
+  }
+  #orbLabel {
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%) translateY(var(--orb-hide, -260px));
+    z-index: 98; pointer-events: none;
+    font: 700 13px/1.2 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    letter-spacing: .2px; color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,.55);
+    white-space: nowrap; opacity: 0;
+    transition: opacity .22s ease, transform .60s cubic-bezier(.18, 1.28, .30, 1);
+  }
+  #orbLabel.on {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% - 22px));
+  }
+  #siriOrb.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+  /* ===== 皮肤页：引擎画框，这里只放 3D 预览 canvas ===== */
+  #skinLayer { position: fixed; left: 0; top: 0; right: 0; bottom: 0; display: none; z-index: 6; pointer-events: none; }
+  #skinLayer.on { display: block; }
+  #skin3d { position: fixed; left: 0; top: 0; display: block; border-radius: 22px; pointer-events: auto; background: transparent; }
+  #skinImgs { position: fixed; overflow: hidden; pointer-events: none; display: none; }
+  #skinImgs.on { display: block; }
+  #skinImgs .sk-cell {
+    position: absolute;
+    background-repeat: no-repeat;
+    background-size: 800% 800%;
+    background-position: 14.2857% 14.2857%;
+    image-rendering: pixelated;
+  }
+  /* 裁好的头像（脸 + 帽子叠层）直接整图铺满，不要圆角 */
+  #skinImgs .sk-cell.head { background-size: 100% 100%; background-position: center; image-rendering: auto; }
+  /* 披风：C# 已裁好 10×16 前片，等比缩放不拉伸 */
+  #skinImgs .sk-cell.cape { background-size: contain; background-position: center; }
+  /* 线程下载的原生输入框：玻璃底板由引擎画，这里只管文字 */
+  .td-input {
+    position: fixed; display: none; margin: 0; padding: 0; border: 0; outline: 0;
+    background: transparent; color: #fff;
+    font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    font-size: 13px; font-weight: 500; letter-spacing: 0.2px;
+    pointer-events: auto; z-index: 7;
+  }
+  .td-input::placeholder { color: rgba(255, 255, 255, 0.45); }
+  .td-input::selection { background: rgba(10, 132, 255, 0.55); }
+  .td-num { text-align: center; font-weight: 600; }
+  .td-input::-webkit-outer-spin-button,
+  .td-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  #skinImgs .sk-cell.on { box-shadow: 0 0 0 2px rgba(255,255,255,0.95) inset; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="avatarWrap"><img id="avatarImg" alt=""></div>
+<input id="portInput" class="glass-input" type="text" inputmode="numeric" placeholder="请输入你的端口" maxlength="5">
+<input id="codeInput" class="glass-input" type="text" placeholder="请输入你的房间号码" maxlength="16">
+<input id="offlineInput" class="glass-input" type="text" placeholder="输入你的离线账户名称" maxlength="16">
+<button id="backOld">返回旧界面</button>
+<div id="iconLayer"></div>
+<div id="svgLayer"></div>
+<div id="waveLayer"><div class="wave"></div><div class="wave wave2"></div></div>
+<div id="aboutLayer">
+  <div id="ab-ring"></div>
+  <canvas id="ab-ring-gl"></canvas>
+  <div id="ab-th-clip"></div>
+  <div id="ab-hero-outline"></div>
+</div>
+<div id="aboutTip"></div>
+<div id="globalToast" style="position:fixed;display:none;left:50%;top:56px;transform:translateX(-50%) scaleX(0);transform-origin:center center;background:rgba(0,0,0,0.8);color:#fff;padding:10px 22px;border-radius:999px;font-size:13px;font-weight:600;letter-spacing:0.3px;backdrop-filter:blur(20px) saturate(1.8);-webkit-backdrop-filter:blur(20px) saturate(1.8);box-shadow:0 10px 30px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,255,255,0.22),inset 0 -0.5px 0 rgba(0,0,0,0.3);z-index:100;pointer-events:none;opacity:0;transition:transform 0.42s cubic-bezier(0.22,1.2,0.36,1),opacity 0.35s ease;white-space:nowrap;overflow:hidden;"></div>
+<svg width="0" height="0" style="position:absolute;pointer-events:none" aria-hidden="true">
+  <defs>
+    <!-- 液态扭曲：把光环边界揉成起伏的水膜 -->
+    <filter id="siriLiquid" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.009 0.013" numOctaves="2" seed="11" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="18" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+</svg>
+<div id="siriAura">
+  <div class="sl" style="--w:6px;--b:0px"><i></i></div>
+  <div class="sl" style="--w:9px;--b:4px"><i></i></div>
+  <div class="sl" style="--w:11px;--b:12px"><i></i></div>
+  <div class="sl" style="--w:15px;--b:15px"><i></i></div>
+</div>
+<div id="siriBurst"></div>
+<div id="orbLabel"></div>
+<input id="rhSearchInput" type="text" placeholder="搜索" autocomplete="off" spellcheck="false">
+<canvas id="siriOrb"></canvas>
+<div id="vsetSpin"></div>
+<div id="rhSpin" style="position:fixed;width:30px;height:30px;display:none;pointer-events:none;z-index:25;border-radius:50%;border:3px solid rgba(255,255,255,0.18);border-top-color:rgba(255,255,255,0.9);animation:vsetSpinRotate 0.9s linear infinite;"></div>
+<div id="vsetIconLayer" style="position:fixed;inset:0;pointer-events:none;z-index:18;overflow:hidden;"></div>
+<div id="rhIconLayer" style="position:fixed;inset:0;pointer-events:none;z-index:18;overflow:hidden;"></div>
+  <div id="rhInstallLayer" style="position:fixed;inset:0;pointer-events:none;z-index:19;overflow:hidden;display:none;"></div>
+<div id="vsetDropGlow"></div>
+<div id="launchPctDom" style="position:fixed; display:none; font-size:17px; font-weight:700; color:#fff; text-align:center; pointer-events:none; z-index:30; text-shadow: 0 1px 4px rgba(0,0,0,0.5);"></div>
+<div id="launchMsgDom" style="position:fixed; display:none; font-size:11px; font-weight:600; color:rgba(255,255,255,0.82); text-align:center; pointer-events:none; z-index:30; text-shadow: 0 1px 4px rgba(0,0,0,0.5);"></div>
+<div id="dlPctDom" style="position:fixed; display:none; font-size:32px; font-weight:700; color:#fff; text-align:center; pointer-events:none; z-index:30; text-shadow: 0 2px 8px rgba(0,0,0,0.5);"></div>
+<div id="dlSpeedDom" style="position:fixed; display:none; font-size:13px; font-weight:600; color:rgba(255,255,255,0.85); text-align:center; pointer-events:none; z-index:30; text-shadow: 0 1px 4px rgba(0,0,0,0.5);"></div>
+<div id="dlMsgDom" style="position:fixed; display:none; font-size:13px; font-weight:600; color:rgba(255,255,255,0.85); text-align:center; pointer-events:none; z-index:30; text-shadow: 0 1px 4px rgba(0,0,0,0.5);"></div>
+<svg id="launchRingSvg" style="position:fixed;display:none;pointer-events:none;z-index:19;overflow:visible;">
+  <rect id="launchRingRect" fill="none" stroke="rgba(255,255,255,0.95)" stroke-width="7" stroke-linecap="round" />
+</svg>
+<input id="vsetNameInput" class="glass-input" type="text" placeholder="输入自定义名称" maxlength="64" style="position:fixed;display:none;z-index:24;" />
+<div id="skinLayer">
+  <canvas id="skin3d"></canvas>
+  <div id="skinImgs"></div>
+</div>
+
+<!-- 线程下载：三个原生输入框（引擎画不了文本输入） -->
+<input id="tdUrl" class="td-input" type="text" placeholder="粘贴直链 (http / https)" spellcheck="false" autocomplete="off" />
+<input id="tdConns" class="td-input td-num" type="number" min="1" max="256" value="32" />
+<input id="tdChunk" class="td-input td-num" type="number" min="1" max="64" value="1" />
+<script>
+/* 启动错误捕获：Engine 或任何脚本报错时写进 localStorage，可从磁盘排查 */
+window.__errs = [];
+(function () {
+  function save(msg) {
+    try {
+      window.__errs.push(msg);
+      localStorage.setItem('boot_err', window.__errs.join(' ||| ').slice(0, 4000));
+    } catch (e) {}
+  }
+  window.addEventListener('error', function (e) {
+    save((e.message || 'error') + ' @' + (e.filename || '?').split('/').pop() + ':' + (e.lineno || 0) + (e.error && e.error.stack ? ' :: ' + String(e.error.stack).slice(0, 600) : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    save('promise: ' + (e.reason && (e.reason.stack || e.reason.message || e.reason) || 'unknown'));
+  });
+  setTimeout(function () {
+    try {
+      var c = document.getElementById('c');
+      var okCanvas = !!(c && c.width > 0 && c.height > 0);
+      save('boot: canvas=' + (okCanvas ? c.width + 'x' + c.height : 'none') + ' elCount=' + (window.__liquidElCount != null ? window.__liquidElCount : '?'));
+    } catch (e) {}
+  }, 2500);
+})();
+</script>
+<script src="skinview3d.bundle.js?v=20261104_r222"></script>
+<script src="ring-glass.js?v=20261104_r222"></script>
+<script>window.SIRI_PARAMS = { ballWidth: 104, dialogWidth: 264, dialogHeight: 104, margin: 0, glassHeight: 9, refractAmount: -38, curvature: 0.9, containerBlack: 0.37 };</script>
+<script src="orb/siri-shaders.js"></script>
+<script src="orb/src/pipeline.js"></script>
+<script src="orb/src/renderer.js"></script>
+<script src="orb/src/uniforms.js"></script>
+<script src="orb/src/state.js"></script>
+<script src="orb/orb-host.js"></script>
+<script src="liquidui/liquidui.js?v=20261104_r222"></script>
+<script>
+  (function () {
+    function back() {
+      try { localStorage.setItem('ui2', '0') } catch (e) {}
+      location.href = 'index.html?t=' + Date.now();
+    }
+    document.getElementById('backOld').addEventListener('click', back);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') back();
+      if (e.ctrlKey && e.shiftKey && (e.key === 'U' || e.key === 'u')) back();
+    });
+  })();
+</script>
+<script>
+  // r145: 轻量性能 HUD。Ctrl+Shift+F 切换显示。
+  // 监视 window.__lgRenderer.render 的调用次数与耗时：
+  //   FPS  = 每秒真正 render 了几帧（引擎是按需渲染，静止时应该接近 0）
+  //   draw = 每次 render 的平均耗时（>16ms 就会感到卡）
+  (function () {
+    var el = document.createElement('div');
+    el.id = 'fpsHud';
+    el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;font:11px/1.45 Consolas,monospace;color:#7dff9b;background:rgba(0,0,0,.62);padding:5px 9px;border-radius:7px;pointer-events:none;white-space:pre;display:none';
+    document.body.appendChild(el);
+    var cnt = 0, acc = 0, mx = 0, last = performance.now(), on = false;
+    // r146: 独立 rAF 计数 = 浏览器渲染帧率。和 render 次数对比就能分辨：
+    //   RAF 正常 + draw 很小但还卡 → 问题在合成/显示层，不在引擎
+    //   RAF 也掉                  → 主线程被 JS 阻塞
+    //   RAF 正常 + draw 很大       → 引擎渲染本身慢
+    var rafCnt = 0;
+    (function rafLoop() { rafCnt++; requestAnimationFrame(rafLoop); })();
+    // r147: GPU 同步计时开关（Ctrl+Shift+G）。开启后每帧末尾调 gl.finish()，
+    // 强制 CPU 等 GPU 真正画完再计时 —— 这样 draw 才是真实的帧耗时，
+    // 而不是只算了 CPU 提交命令的时间。注意：开启后帧率会下降（这是正常的，因为不再重叠）。
+    var syncGpu = false;
+    // r152: 长任务统计。JS 单次执行 >50ms 就是 longtask，直接造成掉帧。
+    // 滚动/切分区时 long 激增 → 瓶颈是 JS（build 重建 / GC），不是渲染。
+    var ltCnt = 0, ltMax = 0;
+    try {
+      new PerformanceObserver(function (list) {
+        list.getEntries().forEach(function (e) { ltCnt++; if (e.duration > ltMax) ltMax = e.duration; });
+      }).observe({ entryTypes: ['longtask'] });
+    } catch (e) { }
+    function hook() {
+      var R = window.__lgRenderer;
+      if (!R || typeof R.render !== 'function' || R.__hudHook) return;
+      R.__hudHook = true;
+      var orig = R.render;
+      R.render = function () {
+        var t = performance.now();
+        var r = orig.apply(this, arguments);
+        if (syncGpu) { try { this.gl.finish(); } catch (e) { } }
+        var d = performance.now() - t;
+        cnt++; acc += d; if (d > mx) mx = d;
+        return r;
+      };
+    }
+    setInterval(function () {
+      var now = performance.now(), dt = now - last; last = now;
+      var fps = cnt * 1000 / dt, avg = cnt ? acc / cnt : 0, mxv = mx;
+      var raf = rafCnt * 1000 / dt;
+      var lt = ltCnt, ltm = ltMax;
+      cnt = 0; acc = 0; mx = 0; rafCnt = 0; ltCnt = 0; ltMax = 0;
+      hook();
+      if (on) el.textContent = 'RAF  ' + raf.toFixed(1) + '  (render ' + fps.toFixed(1) + ')' + (syncGpu ? '  [GPU sync]' : '') + '\ndraw ' + avg.toFixed(2) + ' ms  (max ' + mxv.toFixed(1) + ')' + '\nlong ' + lt + '  (max ' + ltm.toFixed(0) + 'ms)';
+    }, 500);
+    document.addEventListener('keydown', function (e) {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'G' || e.key === 'g')) {
+        syncGpu = !syncGpu;
+      }
+      if (e.ctrlKey && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+        on = !on;
+        el.style.display = on ? 'block' : 'none';
+      }
+    });
+  })();
+</script>
+<script>
+  // r189: 壁纸视差 —— 鼠标移动时背景轻微流动（老 UI 的效果）。
+  // 引擎侧只做了 wallpaper shader / sampleBackdrop 的 uParallax 偏移，这里负责把鼠标位置喂给它。
+  // r195: 鼠标只更新「目标值」，交给渲染循环做指数平滑逼近 → 顺滑 + 轻微延迟拖尾。
+  (function () {
+    var AMP = 10;   // 最大偏移（设备像素）→ 约 5 CSS px
+    var TAU = 420;  // 时间常数 ms：越大越"拖"，越小越跟手（420 ≈ 柔和延迟感）
+    var EPS = 0.03; // 收敛阈值（设备像素），到位即停，不空转
+    var tx = 0, ty = 0;   // 目标偏移
+    var cx = 0, cy = 0;   // 当前偏移（平滑后真正喂给引擎的值）
+    var running = false, lastT = 0;
+
+    window.addEventListener("mousemove", function (e) {
+      var w = window.innerWidth || 1, h = window.innerHeight || 1;
+      // 取反 —— 采样坐标偏移与视觉位移方向相反，这样背景才是「顺着鼠标」走
+      tx = -(e.clientX / w - 0.5) * AMP;
+      ty = -(e.clientY / h - 0.5) * AMP;
+      if (!running) { running = true; lastT = 0; requestAnimationFrame(tick); }
+    }, { passive: true });
+
+    function tick(now) {
+      var R = window.__lgRenderer;
+      if (!R || !R.requestRender) { running = false; return; }
+      var dt = lastT ? Math.min(now - lastT, 64) : 16.7;
+      lastT = now;
+      var a = 1 - Math.exp(-dt / TAU); // 帧率无关的平滑系数
+      cx += (tx - cx) * a;
+      cy += (ty - cy) * a;
+      var done = Math.abs(tx - cx) < EPS && Math.abs(ty - cy) < EPS;
+      if (done) { cx = tx; cy = ty; }
+      R.parallaxX = cx;
+      R.parallaxY = cy;
+      R.requestRender();
+      if (done) { running = false; return; }
+      requestAnimationFrame(tick);
+    }
+  })();
+
+</script>
+
+<script>
+  /* r206: 全局拖放 —— 把文件交给 C#（C# 收到后推 window.onModpackDrop({paths})）
+     没有这段，WPF 层根本收不到 drop，整合包拖进来就没反应。 */
+  (function () {
+    function isFileDrag(e) {
+      var dt = e.dataTransfer;
+      if (!dt) return false;
+      var t = dt.types;
+      if (!t) return true;
+      for (var i = 0; i < t.length; i++) if (t[i] === "Files") return true;
+      return false;
+    }
+    window.addEventListener("dragenter", function (e) {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // r208: 点亮窗口边缘液态折射
+      if (window.__setDropFx) window.__setDropFx(true);
+    }, true);
+    window.addEventListener("dragover", function (e) {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try { e.dataTransfer.dropEffect = "copy"; } catch (err) {}
+      if (window.__setDropFx) window.__setDropFx(true);
+    }, true);
+    window.addEventListener("dragleave", function (e) {
+      // 只有真正离开窗口（relatedTarget 为空）才熄灭，否则子元素间移动会闪
+      if (!e.relatedTarget && window.__setDropFx) window.__setDropFx(false);
+    }, true);
+    window.addEventListener("drop", function (e) {
+      if (!isFileDrag(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (window.__setDropFx) window.__setDropFx(false); // 不论是不是整合包都先熄灭
+      var fl = e.dataTransfer.files;
+      if (!fl || !fl.length) return;
+      // 只接整合包，拖 jar/png 之类不当成整合包
+      var name = (fl[0].name || "").toLowerCase();
+      if (!/\.(mrpack|zip)$/.test(name)) return;
+      var wv = window.chrome && window.chrome.webview;
+      if (wv && wv.postMessageWithAdditionalObjects) {
+        wv.postMessageWithAdditionalObjects("file_drop_modpack", fl);
+      }
+    }, true);
+  })();
+</script>
+
+</body>
+</html>

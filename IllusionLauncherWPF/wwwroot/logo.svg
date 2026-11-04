@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>illusion Launcher</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A1A24"/>
+      <stop offset="1" stop-color="#0A0A0F"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="50%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 圆角深色底 -->
+  <rect x="0" y="0" width="256" height="256" rx="59" ry="59" fill="url(#bg)"/>
+  <!-- 极淡的中心光晕 -->
+  <rect x="0" y="0" width="256" height="256" rx="59" ry="59" fill="url(#glow)"/>
+  <!-- 白色圆环：直径 128，环宽 29.5（约 11.5%），与安装器里的白圈同款 -->
+  <circle cx="128" cy="128" r="64" fill="none" stroke="#FFFFFF" stroke-width="29.5"/>
+</svg>

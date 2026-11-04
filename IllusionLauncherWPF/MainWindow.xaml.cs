@@ -123,6 +123,103 @@ namespace IllusionLauncherWPF
 
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
         [DllImport("user32.dll")] private static extern int SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
+        // ===== Apple-style continuous-corner (squircle) window region =====
+        [DllImport("user32.dll")] private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+        [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr hObject);
+
+        private const double SquircleRadiusDip = 48.0;
+        // 2.0 = 正圆角（区域阶梯最细，但切线处曲率突变→看着“不够圆润”）
+        // 2.5 = 折中（曲率平缓过渡 + 阶梯仍可接受）
+        // 3~4 = 超级椭圆，最“饱满”但曲率挤在角尖→锯齿明显
+        private const double SquircleExponent = 2.5;
+        private int _sqLastW = -1, _sqLastH = -1;
+
+        private void ApplySquircleRegion()
+        {
+            if (_hwnd == IntPtr.Zero) return;
+            try
+            {
+                var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+                double sx = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
+                int w = (int)Math.Round(ActualWidth * sx);
+                int h = (int)Math.Round(ActualHeight * sx);
+                if (w <= 8 || h <= 8) return;
+                if (w == _sqLastW && h == _sqLastH) return;
+
+                int r = (int)Math.Round(SquircleRadiusDip * sx);
+                if (r < 1) r = 1;
+                if (r * 2 > w) r = w / 2;
+                if (r * 2 > h) r = h / 2;
+
+                // Build a superellipse outline and let GDI+ convert it into a region
+                // (ExtCreateRegion needs exact RGNDATA layout and is easy to get wrong).
+                var pts = new System.Collections.Generic.List<System.Drawing.PointF>(h + 2);
+                for (int y = 0; y < h; y++)
+                {
+                    int d = Math.Min(y, h - 1 - y);
+                    int inset;
+                    if (d >= r)
+                    {
+                        inset = 0;
+                    }
+                    else
+                    {
+                        // superellipse quarter: x = r * (1 - (1 - t^n)^(1/n)), t = (r-d)/r
+                        double t = (double)(r - d) / r;
+                        double v = 1.0 - Math.Pow(1.0 - Math.Pow(t, SquircleExponent), 1.0 / SquircleExponent);
+                        inset = (int)Math.Round(r * v);
+                        if (inset < 0) inset = 0;
+                        if (inset > r) inset = r;
+                    }
+                    pts.Add(new System.Drawing.PointF(inset, y));
+                }
+                for (int y = h - 1; y >= 0; y--)
+                {
+                    int d = Math.Min(y, h - 1 - y);
+                    int inset;
+                    if (d >= r)
+                    {
+                        inset = 0;
+                    }
+                    else
+                    {
+                        double t = (double)(r - d) / r;
+                        double v = 1.0 - Math.Pow(1.0 - Math.Pow(t, SquircleExponent), 1.0 / SquircleExponent);
+                        inset = (int)Math.Round(r * v);
+                        if (inset < 0) inset = 0;
+                        if (inset > r) inset = r;
+                    }
+                    pts.Add(new System.Drawing.PointF(w - inset, y));
+                }
+
+                using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    path.AddPolygon(pts.ToArray());
+                    using (var reg = new System.Drawing.Region(path))
+                    using (var g = System.Drawing.Graphics.FromHwnd(IntPtr.Zero))
+                    {
+                        IntPtr hrgn = reg.GetHrgn(g);
+                        if (hrgn != IntPtr.Zero)
+                        {
+                            if (SetWindowRgn(_hwnd, hrgn, true) != 0)
+                            {
+                                _sqLastW = w;
+                                _sqLastH = h;
+                            }
+                            else
+                            {
+                                DeleteObject(hrgn);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[squircle] " + ex.Message);
+            }
+        }
         [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
         [DllImport("user32.dll")] private static extern bool ReleaseCapture();
         [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
@@ -564,6 +661,17 @@ namespace IllusionLauncherWPF
                 // 圆角
                 int cornerPref = DWMWCP_ROUND;
                 DwmSetWindowAttribute(_hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref cornerPref, sizeof(int));
+
+                // Win11 会给窗口描一圈 1px 系统色边框（深色模式下呈浅灰白），关掉它。
+                // DWMWA_BORDER_COLOR = 34, DWMWA_COLOR_NONE = 0xFFFFFFFE
+                int borderColor = unchecked((int)0xFFFFFFFE);
+                DwmSetWindowAttribute(_hwnd, 34, ref borderColor, sizeof(int));
+
+                // Apple-style squircle window region: DISABLED.
+                // User reverted to the plain 8px DWM rounded corners (2026-10-30).
+                // Re-enable by uncommenting the two lines below.
+                // ApplySquircleRegion();
+                // this.SizeChanged += (s3, e3) => ApplySquircleRegion();
 
                 // 去掉系统菜单
                 IntPtr hMenu = GetSystemMenu(_hwnd, false);
@@ -1069,7 +1177,7 @@ namespace IllusionLauncherWPF
             try
             {
                 await WebView.EnsureCoreWebView2Async();
-               
+                WebView.DefaultBackgroundColor = System.Drawing.Color.Transparent;
                 WebView.AllowExternalDrop = true;
                 WebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
                 WebView.CoreWebView2.Settings.IsZoomControlEnabled = false;
@@ -1099,7 +1207,8 @@ namespace IllusionLauncherWPF
 
                 // ⭐ URL 带时间戳：彻底绕开 WebView2 对 index.html 的缓存。
                 //    之前只给 style.css 加了 ?v=，HTML 本身仍被缓存，导致内联样式/新结构看不到。
-                WebView.CoreWebView2.Navigate("https://app.local/index.html?t=" + DateTime.Now.Ticks);
+                // 新 LiquidGlass UI（老界面入口：wwwroot/index.html）
+                WebView.CoreWebView2.Navigate("https://app.local/index2.html?t=" + DateTime.Now.Ticks);
 
                 await Task.Delay(800);
                 _webViewSubclassProc = WebViewSubclassProc;   // ⭐ 存字段防 GC
@@ -1727,18 +1836,16 @@ namespace IllusionLauncherWPF
                     }
                     else if (action == "td_pick_save")
                     {
-                        // ⭐ 线程下载：选择保存位置
+                        // ⭐ 线程下载：选「保存文件夹」（文件名由链接自动推导，不再逼用户起名）
                         string picked = "";
                         await RunOnUI(() =>
                         {
-                            var dlg = new Microsoft.Win32.SaveFileDialog
+                            var dlg = new Microsoft.Win32.OpenFolderDialog
                             {
-                                Title = "保存到",
-                                Filter = "所有文件 (*.*)|*.*",
-                                FileName = "download.bin",
-                                OverwritePrompt = true,
+                                Title = "选择下载保存文件夹",
+                                Multiselect = false,
                             };
-                            if (dlg.ShowDialog() == true) picked = dlg.FileName;
+                            if (dlg.ShowDialog() == true) picked = dlg.FolderName;
                         });
                         await RunOnUI(() => { try { _ = core.ExecuteScriptAsync("onTdSavePicked(" + JsStr(picked) + ")"); } catch { } });
                     }
@@ -1747,6 +1854,29 @@ namespace IllusionLauncherWPF
                         // ⭐ 线程下载：多线程分片下载任意直链
                         var tdUrl = root.TryGetProperty("url", out var u1) ? (u1.GetString() ?? "") : "";
                         var tdSave = root.TryGetProperty("savePath", out var sp1) ? (sp1.GetString() ?? "") : "";
+                        // ⭐ 前端现在传「保存文件夹」，文件名由链接推导；推导不出来就用时间戳
+                        var tdFileName = root.TryGetProperty("fileName", out var fn1) ? (fn1.GetString() ?? "") : "";
+                        if (string.IsNullOrWhiteSpace(tdSave))
+                        {
+                            await RunOnUI(() => { try { _ = core.ExecuteScriptAsync("showToast(\"请先选择保存文件夹\",\"下载需要先指定一个目录\")"); } catch { } });
+                            return;
+                        }
+                        if (Directory.Exists(tdSave) || string.IsNullOrWhiteSpace(Path.GetExtension(tdSave)))
+                        {
+                            if (string.IsNullOrWhiteSpace(tdFileName))
+                            {
+                                try
+                                {
+                                    if (Uri.TryCreate(tdUrl, UriKind.Absolute, out var tdU))
+                                        tdFileName = Uri.UnescapeDataString(Path.GetFileName(tdU.AbsolutePath));
+                                }
+                                catch { }
+                                if (string.IsNullOrWhiteSpace(tdFileName) || tdFileName.IndexOf('.') < 0)
+                                    tdFileName = "download_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".bin";
+                            }
+                            foreach (var badCh in Path.GetInvalidFileNameChars()) tdFileName = tdFileName.Replace(badCh, '_');
+                            tdSave = Path.Combine(tdSave, tdFileName);
+                        }
                         int tdConns = root.TryGetProperty("conns", out var c1) ? c1.GetInt32() : 96;
                         int tdChunkMb = root.TryGetProperty("chunkMb", out var k1) ? k1.GetInt32() : 1;
                         if (tdChunkMb < 1) tdChunkMb = 1;
@@ -1800,7 +1930,7 @@ namespace IllusionLauncherWPF
                         var savedKeyLen = string.IsNullOrEmpty(_global.CurseForgeApiKey) ? 0 : _global.CurseForgeApiKey.Length;
                         await RunOnUI(() =>
                         {
-                            _ = core.ExecuteScriptAsync($"onConfigSaved({{\"keyLen\":{savedKeyLen}}}");
+                            _ = core.ExecuteScriptAsync($"onConfigSaved({{\"keyLen\":{savedKeyLen}}})");
                         });
 
                         // ... 下面原来的代码不变
@@ -2092,6 +2222,40 @@ namespace IllusionLauncherWPF
                             await RunOnUI(() => { _ = core.ExecuteScriptAsync($"onDeleteFailed('{versionId}', '{safeMsg}')"); });
                         }
                     }
+                    else if (action == "detect_java")
+                    {
+                        _ = Task.Run(() => DetectJavaAsync(core));
+                    }
+                    else if (action == "optimize_memory")
+                    {
+                        _ = Task.Run(() => RequestAdminOptimizeAsync());
+                    }
+                    else if (action == "pick_java")
+                    {
+                        _ = Dispatcher.InvokeAsync(() => PickJavaFileAsync(core));
+                    }
+                    else if (action == "pick_java_folder")
+                    {
+                        _ = Dispatcher.InvokeAsync(() => PickJavaFolderAsync(core));
+                    }
+                    else if (action == "pick_game_path")
+                    {
+                        _ = Dispatcher.InvokeAsync(() => PickGamePathAsync(core));
+                    }
+                    else if (action == "pick_background")
+                    {
+                        _ = Dispatcher.InvokeAsync(() => PickBackgroundAsync(core));
+                    }
+                    else if (action == "reset_background")
+                    {
+                        _global.BackgroundPath = "";
+                        SaveGlobalConfig();
+                        await RunOnUI(() =>
+                        {
+                            _ = core.ExecuteScriptAsync("onBg('')");
+                            _ = core.ExecuteScriptAsync("onBackgroundReset({ok:true})");
+                        });
+                    }
                 }
                 catch { }
                 return;
@@ -2169,8 +2333,19 @@ namespace IllusionLauncherWPF
                     _ = Task.Run(() => PickGamePathAsync(core));
                     break;
                 case "pick_background":
-                    _ = Task.Run(() => PickBackgroundAsync(core));
+                    _ = Dispatcher.InvokeAsync(() => PickBackgroundAsync(core));
                     break;
+                case "reset_background":
+                    {
+                        _global.BackgroundPath = "";
+                        SaveGlobalConfig();
+                        _ = RunOnUI(() =>
+                        {
+                            _ = core.ExecuteScriptAsync("onBg('')");
+                            _ = core.ExecuteScriptAsync("onBackgroundReset({ok:true})");
+                        });
+                        break;
+                    }
                 case "get_background":
                     {
                         // get_background 每次界面刷新都会调用，不再打日志
@@ -2182,7 +2357,30 @@ namespace IllusionLauncherWPF
                             if (File.Exists(bgFilePath))
                             {
                                 var url = $"https://bg.local/{bgFileName}";
-                                var json = JsonSerializer.Serialize(new { url = url, path = bgFilePath });
+                                // 额外给一份缩小的 data URI：关于页的液态玻璃环需要用背景像素做折射，
+                                // 而 bg.local 与 app.local 跳主机，WebGL 上传跨域图会抛 SecurityError。
+                                // data URI 属于页面自身，不会被标记为污染。
+                                string dataUri = "";
+                                try
+                                {
+                                    var bi = new System.Windows.Media.Imaging.BitmapImage();
+                                    bi.BeginInit();
+                                    bi.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                                    bi.DecodePixelWidth = 960;
+                                    bi.UriSource = new Uri(bgFilePath);
+                                    bi.EndInit();
+                                    bi.Freeze();
+                                    var enc = new System.Windows.Media.Imaging.JpegBitmapEncoder();
+                                    enc.QualityLevel = 82;
+                                    enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bi));
+                                    using (var ms = new System.IO.MemoryStream())
+                                    {
+                                        enc.Save(ms);
+                                        dataUri = "data:image/jpeg;base64," + Convert.ToBase64String(ms.ToArray());
+                                    }
+                                }
+                                catch { }
+                                var json = JsonSerializer.Serialize(new { url = url, path = bgFilePath, dataUri = dataUri });
                                 await RunOnUI(() => { _ = core.ExecuteScriptAsync($"onBackgroundLoaded({json})"); });
                             }
                         }
@@ -2498,7 +2696,8 @@ namespace IllusionLauncherWPF
         }
 
         private async Task DownloadParallelAsync(string url, string savePath,
-            Action<long, long, double> progress, string expectedSha1 = null, bool useMultiMirror = false)
+            Action<long, long, double> progress, string expectedSha1 = null, bool useMultiMirror = false,
+            int segCount = PARALLEL_SEGMENTS, long minParallelSize = PARALLEL_THRESHOLD)
         {
             var ct = _dlSessionToken;
             Directory.CreateDirectory(Path.GetDirectoryName(savePath));
@@ -2529,7 +2728,7 @@ namespace IllusionLauncherWPF
             }
 
             var (size, supportsRange) = await ProbeAsync(mirrorUrls[0]);
-            if (size < PARALLEL_THRESHOLD || !supportsRange)
+            if (size < minParallelSize || !supportsRange)
             {
                 await DownloadFileAsync(url, url, savePath, (d, t) => { progress?.Invoke(d, t, 0); }, expectedSha1);
                 return;
@@ -2537,19 +2736,19 @@ namespace IllusionLauncherWPF
 
             string tempDir = savePath + ".parts";
             Directory.CreateDirectory(tempDir);
-            long segSize = size / PARALLEL_SEGMENTS;
+            long segSize = size / segCount;
             var segTasks = new List<Task>();
-            var segProgress = new long[PARALLEL_SEGMENTS];
+            var segProgress = new long[segCount];
             long totalDownloaded = 0;
             var lastReport = DateTime.Now;
             long lastBytes = 0;
             var progressLock = new object();
 
-            for (int i = 0; i < PARALLEL_SEGMENTS; i++)
+            for (int i = 0; i < segCount; i++)
             {
                 int segIndex = i;
                 long start = i * segSize;
-                long end = (i == PARALLEL_SEGMENTS - 1) ? size - 1 : (start + segSize - 1);
+                long end = (i == segCount - 1) ? size - 1 : (start + segSize - 1);
                 string segPath = Path.Combine(tempDir, $"seg_{segIndex}.part");
                 string segUrl = mirrorUrls[segIndex % mirrorUrls.Count];
 
@@ -2630,7 +2829,7 @@ namespace IllusionLauncherWPF
 
             using (var output = new FileStream(savePath, FileMode.Create, FileAccess.Write))
             {
-                for (int i = 0; i < PARALLEL_SEGMENTS; i++)
+                for (int i = 0; i < segCount; i++)
                 {
                     string segPath = Path.Combine(tempDir, $"seg_{i}.part");
                     using var segFs = File.OpenRead(segPath);
@@ -5495,6 +5694,24 @@ namespace IllusionLauncherWPF
                     DiagnosticLogger.Instance.Info($"[Launch] json 未提供 -Djava.library.path，已补：{nativesRoot}");
                 }
 
+                // 26.x：原生库解压在 natives\java（json 模板写作 ${natives_directory}/java），
+                // 而兜底只给 nativesRoot -> LWJGL 找不到 lwjgl.dll（Failed to locate library）。
+                // 铁律：只在「natives 根下没有 lwjgl.dll、natives\java 下有」时纠正，
+                // 老版本（natives 扁平）根下就有 dll，条件不成立，一字不改。
+                var nestedNatives = Path.Combine(nativesRoot, "java");
+                if (!File.Exists(Path.Combine(nativesRoot, "lwjgl.dll")) &&
+                    File.Exists(Path.Combine(nestedNatives, "lwjgl.dll")))
+                {
+                    for (int li = 0; li < jvmArgs.Count; li++)
+                    {
+                        if (jvmArgs[li].StartsWith("-Djava.library.path=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            jvmArgs[li] = "-Djava.library.path=" + nestedNatives;
+                            DiagnosticLogger.Instance.Info($"[Launch] json 未提供 -Djava.library.path，已补：{nestedNatives}");
+                        }
+                    }
+                }
+
                 jvmArgs.RemoveAll(x => x.StartsWith("-Xmx"));
                 jvmArgs.RemoveAll(x => x.StartsWith("-Xms"));
                 jvmArgs.Add($"-Xmx{cfg.MaxMemoryMB}M");
@@ -6227,6 +6444,10 @@ namespace IllusionLauncherWPF
                             SaveStats(st);
                             var statsJson = JsonSerializer.Serialize(st, JsonOpts());
                             await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onStatsUpdated({statsJson})"); });
+
+                            // r205: 无论退出码如何，都通知前端「游戏已结束」，让主页从「已启动」回到「开始游戏」
+                            var exitedJson = JsonSerializer.Serialize(new { versionId = versionId, exitCode = exitCode });
+                            await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"if(window.onGameExited) onGameExited({{exitedJson}})"); });
 
                             if (exitCode != 0)
                             {
@@ -7517,9 +7738,67 @@ namespace IllusionLauncherWPF
                 catch { loaderMap[v] = "vanilla"; }
             }
 
-            var payload = new { versions = list, javaMap = javaMap, loaderMap = loaderMap };
+            // ⭐ 读每个实例真实对应的原版 MC 版本（走 inheritsFrom 继承链，不靠正则猜）
+            var mcMap = new Dictionary<string, string>();
+            foreach (var v in list)
+            {
+                try { mcMap[v] = DetectMcVersion(v, versionsDir, 0); }
+                catch { mcMap[v] = ""; }
+            }
+
+            var payload = new { versions = list, javaMap = javaMap, loaderMap = loaderMap, mcMap = mcMap };
             var json = JsonSerializer.Serialize(payload);
             await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onInstalledVersions({json})"); });
+        }
+
+        /// <summary>
+        /// 读版本 json 的 inheritsFrom 继承链，取最底层原版版本号 = 真正的 MC 版本。
+        /// 整合包（无继承链）读 modrinth.index.json 的 dependencies.minecraft。
+        /// </summary>
+        private string DetectMcVersion(string versionId, string versionsDir, int depth)
+        {
+            if (depth > 6 || string.IsNullOrWhiteSpace(versionId)) return "";
+            try
+            {
+                var vDir = Path.Combine(versionsDir, versionId);
+                var vJson = Path.Combine(vDir, versionId + ".json");
+                if (!File.Exists(vJson))
+                {
+                    var idx = Path.Combine(vDir, "modrinth.index.json");
+                    if (File.Exists(idx))
+                    {
+                        using var idoc = JsonDocument.Parse(File.ReadAllText(idx));
+                        if (idoc.RootElement.TryGetProperty("dependencies", out var dep) &&
+                            dep.TryGetProperty("minecraft", out var mv))
+                            return mv.GetString() ?? "";
+                    }
+                    return "";
+                }
+
+                using var doc = JsonDocument.Parse(File.ReadAllText(vJson));
+                var root = doc.RootElement;
+                if (root.TryGetProperty("inheritsFrom", out var inhEl))
+                {
+                    var parent = inhEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(parent))
+                    {
+                        var pv = DetectMcVersion(parent, versionsDir, depth + 1);
+                        return string.IsNullOrEmpty(pv) ? parent : pv;
+                    }
+                }
+
+                // 没有继承链 → 它自己就是原版版本
+                foreach (var key in new[] { "clientVersion", "jar", "id" })
+                {
+                    if (root.TryGetProperty(key, out var el))
+                    {
+                        var v = el.GetString();
+                        if (!string.IsNullOrWhiteSpace(v)) return v;
+                    }
+                }
+            }
+            catch { }
+            return "";
         }
 
         /// <summary>
@@ -7598,16 +7877,54 @@ namespace IllusionLauncherWPF
                 @"C:\Program Files\BellSoft", @"C:\Program Files\Zulu",
                 @"C:\Program Files\Amazon Corretto",
                 @"D:\Java", @"D:\Program Files\Java",
+                @"D:\illusion_Version\java",
                 GetJavaDir(),
             };
+            // 环境变量 JAVA_HOME（JDK 根目录）
+            try
+            {
+                var jh = Environment.GetEnvironmentVariable("JAVA_HOME");
+                if (!string.IsNullOrWhiteSpace(jh) && Directory.Exists(jh) && !searchPaths.Contains(jh))
+                    searchPaths.Add(jh);
+            }
+            catch { }
+            // PATH 中的 java 目录：若目录名是 bin，取其父目录（ScanJavaDirAsync 会拼 bin\java.exe）
+            try
+            {
+                var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
+                foreach (var seg in pathVar.Split(';'))
+                {
+                    var dir = seg.Trim();
+                    if (dir.Length == 0) continue;
+                    try
+                    {
+                        if (!Directory.Exists(dir)) continue;
+                        if (!File.Exists(Path.Combine(dir, "java.exe"))) continue;
+                        var parent = Directory.GetParent(dir)?.FullName ?? dir;
+                        if (!searchPaths.Contains(parent)) searchPaths.Add(parent);
+                        if (!searchPaths.Contains(dir)) searchPaths.Add(dir);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
             var found = new HashSet<string>();
             foreach (var basePath in searchPaths)
             {
-                if (!Directory.Exists(basePath)) continue;
-                await ScanJavaDirAsync(basePath, result, found, 3);
+                try
+                {
+                    if (!Directory.Exists(basePath)) continue;
+                    await ScanJavaDirAsync(basePath, result, found, 3);
+                }
+                catch { }
             }
-            var json = JsonSerializer.Serialize(result, JsonOpts());
-            await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onJavaDetected({json})"); });
+            try
+            {
+                var json = JsonSerializer.Serialize(result, JsonOpts());
+                await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onJavaDetected({json})"); });
+            }
+            catch { }
         }
 
         private async Task ScanJavaDirAsync(string basePath, List<object> result, HashSet<string> found, int depth)
@@ -7618,8 +7935,10 @@ namespace IllusionLauncherWPF
             {
                 found.Add(direct);
                 string versionStr = "未知";
-                int ver = GetJavaVersion(direct, out versionStr);
-                var vendor = GetJavaVendor(direct);
+                int ver = 0;
+                try { ver = GetJavaVersion(direct, out versionStr); } catch { }
+                string vendor = "";
+                try { vendor = GetJavaVendor(direct); } catch { }
                 var info = new JavaInfo
                 {
                     Version = versionStr,

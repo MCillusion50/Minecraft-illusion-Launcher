@@ -1,6 +1,7 @@
 # 前端交接文档（Minecraft illusion Launcher / WPF + WebView2）
 
 > 用途：新会话的 AI 或新接手的开发者，先读这份，不必重新通读 8000+ 行前端。
+> **⚠️ 本文档讲的是旧 UI（index.html + style.css）。新 UI（index2.html + liquidui.js）请读 `HANDOVER_LIQUIDUI.md`，里面有重新打包会覆盖改动的警告。**
 > 最后更新：2026-10-25
 
 ---

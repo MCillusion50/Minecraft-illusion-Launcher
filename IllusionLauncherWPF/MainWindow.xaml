@@ -13,7 +13,7 @@
 
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
-                            ResizeBorderThickness="1"
+                            ResizeBorderThickness="6"
                             CornerRadius="0"
                             GlassFrameThickness="0"
                             NonClientFrameEdges="None"
@@ -27,5 +27,7 @@
                       AllowDrop="True"
                       DragOver="WebView_DragOver"
                       Drop="WebView_Drop" />
+        <!-- r174: 1px 极淡描边，盖住原先露出的 Window.Background 黑边 -->
+        <Border BorderBrush="#14FFFFFF" BorderThickness="1" CornerRadius="8" IsHitTestVisible="False" />
     </Grid>
 </Window>

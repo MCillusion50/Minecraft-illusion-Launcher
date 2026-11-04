@@ -5712,7 +5712,7 @@ window.onJavaDetected = function(data) {
 						float hFromSDF(vec2 p, vec2 b, float r, float k, float w) {
 						float d;
 						if (u_isRing == 1) {
-						d = sdRing(p, u_glassSize.x * 0.45, u_glassSize.x * 0.28, k);
+						d = sdRing(p, u_glassSize.x * 0.45, u_glassSize.x * 0.2357, k);
 						} else {
 						d = sdRoundedBoxSmooth(p, b, r, k);
 						}
@@ -5725,7 +5725,7 @@ window.onJavaDetected = function(data) {
 						float r = min(u_cornerRadius, min(u_glassSize.x, u_glassSize.y) / 2.0);
 
 						if (u_isRing == 1) {
-						sd = sdRing(pc, u_glassSize.x * 0.45, u_glassSize.x * 0.28, u_sminSmoothing);
+						sd = sdRing(pc, u_glassSize.x * 0.45, u_glassSize.x * 0.2357, u_sminSmoothing);
 						} else {
 						sd = sdRoundedBoxSmooth(pc, hs, r, u_sminSmoothing);
 						}
@@ -6531,5 +6531,16 @@ gl.uniform1i(uIsRing, t.isRing ? 1 : 0); // 👈 加在 if/else 判断的后面
 })();
 </script>
 
+
+<script>
+/* ui2-hotkey: Ctrl+Shift+U switches to the LiquidGlass UI */
+(function () {
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'U' || e.key === 'u')) {
+      location.href = 'index2.html?t=' + Date.now();
+    }
+  });
+})();
+</script>
 </body>
 			</html>

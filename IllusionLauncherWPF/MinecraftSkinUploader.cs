@@ -109,6 +109,18 @@ namespace IllusionLauncherWPF
             catch { return null; }
         }
 
+        // 完整披风纹理（64x32），供前端 skinview3d 的 loadCape 使用
+        internal async Task<string> FetchCapeFullAsync(string url)
+        {
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
+                var bytes = await http.GetByteArrayAsync(url);
+                return "data:image/png;base64," + Convert.ToBase64String(bytes);
+            }
+            catch { return null; }
+        }
+
 internal async Task<(bool ok, string json, string error)> FetchProfileAsync(string username)
         {
             try

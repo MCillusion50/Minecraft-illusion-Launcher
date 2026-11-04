@@ -28,6 +28,8 @@ namespace IllusionLauncherWPF
         [JsonPropertyName("name")] public string Name { get; set; } = "";
         [JsonPropertyName("fileName")] public string FileName { get; set; } = "";
         [JsonPropertyName("addedAt")] public string AddedAt { get; set; } = "";
+        // 只用于发给前端的响应，不落盘
+        [JsonPropertyName("dataUri")] public string DataUri { get; set; } = "";
     }
 
     public class SkinAssignment
@@ -157,6 +159,130 @@ namespace IllusionLauncherWPF
                         return true;
                     }
 
+                case "pick_folder":
+                    {
+                        try
+                        {
+                            var title = root.TryGetProperty("title", out var ttl) ? ttl.GetString() : "选择保存位置";
+                            string picked = null;
+                            await RunOnUI(() =>
+                            {
+                                using var dlg = new System.Windows.Forms.FolderBrowserDialog
+                                {
+                                    Description = string.IsNullOrWhiteSpace(title) ? "选择保存位置" : title,
+                                    UseDescriptionForTitle = true,
+                                    ShowNewFolderButton = true
+                                };
+                                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK) picked = dlg.SelectedPath;
+                            });
+                            var pj = System.Text.Json.JsonSerializer.Serialize(new { ok = !string.IsNullOrEmpty(picked), path = picked ?? "" });
+                            await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onPickedFolder({pj})"); });
+                        }
+                        catch (Exception ex)
+                        {
+                            var ej = System.Text.Json.JsonSerializer.Serialize(new { ok = false, path = "", error = ex.Message });
+                            await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onPickedFolder({ej})"); });
+                        }
+                        return true;
+                    }
+
+                case "download_to_folder":
+                    {
+                        // 整合包：直接下载到用户自选目录（16 段并发），不做自动安装
+                        var fUrl = root.TryGetProperty("url", out var fu) ? fu.GetString() : null;
+                        var fName = root.TryGetProperty("fileName", out var fn) ? fn.GetString() : "modpack.zip";
+                        var fDir = root.TryGetProperty("dir", out var fd) ? fd.GetString() : null;
+                        long fModId = root.TryGetProperty("modId", out var fm) && fm.ValueKind == JsonValueKind.Number ? fm.GetInt64() : 0;
+                        long fFileId = root.TryGetProperty("fileId", out var ff) && ff.ValueKind == JsonValueKind.Number ? ff.GetInt64() : 0;
+
+                        _ = Task.Run(async () =>
+                        {
+                            if (!await TryEnterDownloadLock(sender)) return;
+                            BeginDownloadSession();
+                            try
+                            {
+                                if (string.IsNullOrWhiteSpace(fDir) || !Directory.Exists(fDir))
+                                {
+                                    await RunOnUI(() => { _ = sender.ExecuteScriptAsync("onModrinthInstallDone({ok:false, error:'保存目录无效，请重新选择'})"); });
+                                    return;
+                                }
+
+                                var realUrl = fUrl;
+                                if (string.IsNullOrWhiteSpace(realUrl) && fModId > 0 && fFileId > 0)
+                                    realUrl = await GetCfDownloadUrlAsync((int)fModId, (int)fFileId);
+                                if (string.IsNullOrWhiteSpace(realUrl))
+                                {
+                                    await RunOnUI(() => { _ = sender.ExecuteScriptAsync("onModrinthInstallDone({ok:false, error:'拿不到下载直链'})"); });
+                                    return;
+                                }
+
+                                var safeName = Path.GetFileName(string.IsNullOrWhiteSpace(fName) ? "modpack.zip" : fName);
+                                if (string.IsNullOrWhiteSpace(safeName)) safeName = "modpack.zip";
+                                var savePath = Path.Combine(fDir, safeName);
+
+                                await ReportProgress(sender, 5, $"正在下载 {safeName}...");
+                                await DownloadParallelAsync(realUrl, savePath, (d, t, speed) =>
+                                {
+                                    if (t > 0)
+                                    {
+                                        var sp = speed > 0 ? $" · {speed / 1024 / 1024:F1} MB/s" : "";
+                                        _ = ReportProgress(sender, (double)d / t * 100, $"{safeName} {d / 1024 / 1024}MB / {t / 1024 / 1024}MB{sp}");
+                                    }
+                                }, null, false, 16, 1024 * 1024);
+
+                                var okJson = System.Text.Json.JsonSerializer.Serialize(new { ok = true, version = safeName, folder = fDir });
+                                await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onModrinthInstallDone({okJson})"); });
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                await RunOnUI(() => { _ = sender.ExecuteScriptAsync("onModrinthInstallDone({ok:false, error:'已取消下载'})"); });
+                            }
+                            catch (Exception ex)
+                            {
+                                var ej2 = System.Text.Json.JsonSerializer.Serialize(new { ok = false, error = ex.Message });
+                                await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onModrinthInstallDone({ej2})"); });
+                            }
+                            finally
+                            {
+                                EndDownloadSession();
+                                await ExitDownloadLock(sender);
+                            }
+                        });
+                        return true;
+                    }
+
+                case "get_ms_accounts":
+                    {
+                        try
+                        {
+                            var msauthPath = System.IO.Path.Combine(
+                                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                                ".illusionlauncher", "msauth.json");
+                            var list = new System.Collections.Generic.List<object>();
+                            if (System.IO.File.Exists(msauthPath))
+                            {
+                                using var doc = JsonDocument.Parse(System.IO.File.ReadAllText(msauthPath));
+                                if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var e in doc.RootElement.EnumerateArray())
+                                    {
+                                        string uname = null, uuid = null;
+                                        if (e.TryGetProperty("username", out var pu)) uname = pu.GetString();
+                                        if (e.TryGetProperty("uuid", out var pv)) uuid = pv.GetString();
+                                        if (!string.IsNullOrEmpty(uname))
+                                        {
+                                            list.Add(new { name = uname, uuid = uuid, type = "microsoft" });
+                                        }
+                                    }
+                                }
+                            }
+                            var payload = JsonSerializer.Serialize(new { ok = true, accounts = list });
+                            await RunOnUI(() => { _ = sender.ExecuteScriptAsync("window.onMsAccounts && window.onMsAccounts(" + payload + ")"); });
+                        }
+                        catch { }
+                        return true;
+                    }
+
                 case "fetch_avatar":
                     {
                         var uuid = root.GetProperty("uuid").GetString();
@@ -215,7 +341,24 @@ namespace IllusionLauncherWPF
                     }
                 case "list_skins":
                     {
-                        var json = JsonSerializer.Serialize(ListSkins(), JsonOpts());
+                        var skins = ListSkins();
+                        // 附加 dataUri：skins.local 与 app.local 跳主机，前端 skinview3d / canvas
+                        // 一旦要读像素就会被跨域拦住，所以直接给 base64。
+                        foreach (var sk in skins)
+                        {
+                            try
+                            {
+                                var sp = Path.Combine(GetConfigDir(), "skins", sk.FileName);
+                                if (File.Exists(sp))
+                                {
+                                    var ext = Path.GetExtension(sk.FileName).ToLowerInvariant();
+                                    var mime = (ext == ".jpg" || ext == ".jpeg") ? "image/jpeg" : "image/png";
+                                    sk.DataUri = "data:" + mime + ";base64," + Convert.ToBase64String(File.ReadAllBytes(sp));
+                                }
+                            }
+                            catch { }
+                        }
+                        var json = JsonSerializer.Serialize(skins, JsonOpts());
                         await RunOnUI(() => { _ = sender.ExecuteScriptAsync($"onSkinLibrary({json})"); });
                         return true;
                     }
@@ -417,6 +560,7 @@ namespace IllusionLauncherWPF
 
                                             // 并发下载，避免 8 个披风串行等到前端超时
                                             var _capeThumbs = await Task.WhenAll(_capeRows.Select(r => FetchCapeThumbAsync(r.url)));
+                            var _capeFull = await Task.WhenAll(_capeRows.Select(r => FetchCapeFullAsync(r.url)));
 
                                             for (var _ci = 0; _ci < _capeRows.Count; _ci++)
                                             {
@@ -427,7 +571,8 @@ namespace IllusionLauncherWPF
                                                     state = _row.state,
                                                     alias = _row.alias,
                                                     url = _row.url,
-                                                    thumb = _capeThumbs[_ci]
+                                                    thumb = _capeThumbs[_ci],
+                                    dataUri = _capeFull[_ci]
                                                 });
                                             }
                                         }
@@ -1054,7 +1199,7 @@ namespace IllusionLauncherWPF
                         string sp = speed > 0 ? $" · {FormatSpeed(speed)}" : "";
                         _ = ReportProgress(sender, pct, $"{fileName} {d / 1024 / 1024}MB / {t / 1024 / 1024}MB{sp}");
                     }
-                }, sha1);
+                }, sha1, false, 16, 1024 * 1024);   // 资源大厅：16 段并发，≥1MB 生效
 
                 await ReportProgress(sender, 100, $" {fileName} 已安装到 {saveVersion ?? "全局"}");
                 var doneMsg = JsonSerializer.Serialize(new { ok = true, version = saveVersion ?? "全局", folder = subFolder });
